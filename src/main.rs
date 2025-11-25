@@ -1,6 +1,7 @@
 mod cli;
 mod frecency;
 mod git;
+mod interactive;
 mod matcher;
 mod storage;
 
@@ -22,7 +23,7 @@ fn main() -> Result<()> {
     if cli.list {
         list_matching_branches(pattern, cli.ignore_case)?;
     } else {
-        let branch = find_and_checkout_branch(pattern, cli.ignore_case)?;
+        let branch = find_and_checkout_branch(pattern, cli.ignore_case, cli.interactive)?;
         println!("Switched to branch '{}'", branch);
     }
 
@@ -93,7 +94,7 @@ fn list_matching_branches(pattern: &str, ignore_case: bool) -> Result<()> {
     Ok(())
 }
 
-fn find_and_checkout_branch(pattern: &str, ignore_case: bool) -> Result<String> {
+fn find_and_checkout_branch(pattern: &str, ignore_case: bool, interactive: bool) -> Result<String> {
     let branches = git::get_branches()?;
     let matches = matcher::filter_branches(&branches, pattern, ignore_case);
 
@@ -107,19 +108,25 @@ fn find_and_checkout_branch(pattern: &str, ignore_case: bool) -> Result<String> 
     
     // Convert matches to owned strings for frecency sorting
     let match_strings: Vec<String> = matches.iter().map(|s| s.to_string()).collect();
-    let ranked = frecency::sort_branches_by_frecency(&match_strings, &records);
 
-    // Get the best match (highest frecency score)
-    let best_match = &ranked[0].0;
+    // Determine which branch to checkout
+    let branch_to_checkout = if interactive || match_strings.len() > 1 {
+        // Use interactive mode if explicitly requested OR if there are multiple matches
+        interactive::select_branch(&match_strings, &records)?
+    } else {
+        // Single match or non-interactive: use best frecency match
+        let ranked = frecency::sort_branches_by_frecency(&match_strings, &records);
+        ranked[0].0.clone()
+    };
 
     // Checkout the branch
-    git::checkout(best_match)?;
+    git::checkout(&branch_to_checkout)?;
 
     // Record the checkout for frecency tracking
-    if let Err(e) = storage::record_checkout(&repo_path, best_match) {
+    if let Err(e) = storage::record_checkout(&repo_path, &branch_to_checkout) {
         // Don't fail the checkout if recording fails, just warn
         eprintln!("Warning: Failed to record checkout: {}", e);
     }
 
-    Ok(best_match.clone())
+    Ok(branch_to_checkout)
 }

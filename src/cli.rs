@@ -10,6 +10,7 @@ use clap::Parser;
 ///     ggo feature      Checkout best branch matching 'feature'
 ///     ggo -l feat      List all branches matching 'feat' with scores
 ///     ggo -i FEAT      Case-insensitive match for 'FEAT'
+///     ggo --interactive feat   Show interactive menu to select branch
 ///     ggo --stats      Show usage statistics
 ///
 /// NOTE:
@@ -31,6 +32,10 @@ pub struct Cli {
     /// Case-insensitive pattern matching
     #[arg(short = 'i', long = "ignore-case")]
     pub ignore_case: bool,
+
+    /// Show interactive menu to select from matches
+    #[arg(long)]
+    pub interactive: bool,
 
     /// Show usage statistics
     #[arg(long)]
