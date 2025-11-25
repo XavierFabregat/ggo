@@ -8,6 +8,7 @@ use clap::Parser;
 /// EXAMPLES:
 ///     ggo expo         Checkout best branch matching 'expo'
 ///     ggo feature      Checkout best branch matching 'feature'
+///     ggo -            Go back to previous branch (like cd -)
 ///     ggo -l feat      List all branches matching 'feat' with scores
 ///     ggo -i FEAT      Case-insensitive match for 'FEAT'
 ///     ggo --interactive feat   Show interactive menu to select branch
@@ -21,7 +22,7 @@ use clap::Parser;
 #[command(version)]
 #[command(about = "Smart Git Navigation Tool", long_about = None)]
 pub struct Cli {
-    /// Search pattern to match branch names
+    /// Search pattern to match branch names (use '-' to go back to previous branch)
     #[arg(required_unless_present = "stats")]
     pub pattern: Option<String>,
 

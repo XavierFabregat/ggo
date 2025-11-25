@@ -20,6 +20,12 @@ fn main() -> Result<()> {
 
     let pattern = cli.pattern.as_deref().unwrap_or("");
 
+    // Handle the special '-' pattern to go back to previous branch
+    if pattern == "-" {
+        checkout_previous_branch()?;
+        return Ok(());
+    }
+
     if cli.list {
         list_matching_branches(pattern, cli.ignore_case)?;
     } else {
@@ -94,6 +100,31 @@ fn list_matching_branches(pattern: &str, ignore_case: bool) -> Result<()> {
     Ok(())
 }
 
+fn checkout_previous_branch() -> Result<()> {
+    let repo_path = git::get_repo_root()?;
+    
+    let previous_branch = storage::get_previous_branch(&repo_path)?
+        .ok_or_else(|| anyhow::anyhow!("No previous branch found"))?;
+
+    // Save current branch before switching
+    if let Ok(current_branch) = git::get_current_branch() {
+        if let Err(e) = storage::save_previous_branch(&repo_path, &current_branch) {
+            eprintln!("Warning: Failed to save current branch: {}", e);
+        }
+    }
+
+    // Checkout the previous branch
+    git::checkout(&previous_branch)?;
+
+    // Record the checkout for frecency tracking
+    if let Err(e) = storage::record_checkout(&repo_path, &previous_branch) {
+        eprintln!("Warning: Failed to record checkout: {}", e);
+    }
+
+    println!("Switched to branch '{}'", previous_branch);
+    Ok(())
+}
+
 fn find_and_checkout_branch(pattern: &str, ignore_case: bool, interactive: bool) -> Result<String> {
     let branches = git::get_branches()?;
     let matches = matcher::filter_branches(&branches, pattern, ignore_case);
@@ -118,6 +149,16 @@ fn find_and_checkout_branch(pattern: &str, ignore_case: bool, interactive: bool)
         let ranked = frecency::sort_branches_by_frecency(&match_strings, &records);
         ranked[0].0.clone()
     };
+
+    // Save current branch as previous before switching
+    if let Ok(current_branch) = git::get_current_branch() {
+        // Only save if we're switching to a different branch
+        if current_branch != branch_to_checkout {
+            if let Err(e) = storage::save_previous_branch(&repo_path, &current_branch) {
+                eprintln!("Warning: Failed to save current branch: {}", e);
+            }
+        }
+    }
 
     // Checkout the branch
     git::checkout(&branch_to_checkout)?;

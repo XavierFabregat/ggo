@@ -167,3 +167,58 @@ pub fn get_stats() -> Result<Stats> {
     })
 }
 
+/// Save the previous branch for quick access (like cd -)
+pub fn save_previous_branch(repo_path: &str, branch_name: &str) -> Result<()> {
+    let conn = open_db()?;
+
+    // Create the previous_branch table if it doesn't exist
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS previous_branch (
+            repo_path TEXT PRIMARY KEY,
+            branch_name TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+        [],
+    )
+    .context("Failed to create previous_branch table")?;
+
+    let now = now_timestamp();
+
+    conn.execute(
+        "INSERT OR REPLACE INTO previous_branch (repo_path, branch_name, updated_at)
+         VALUES (?1, ?2, ?3)",
+        [repo_path, branch_name, &now.to_string()],
+    )
+    .context("Failed to save previous branch")?;
+
+    Ok(())
+}
+
+/// Get the previous branch for the given repository
+pub fn get_previous_branch(repo_path: &str) -> Result<Option<String>> {
+    let conn = open_db()?;
+
+    // Make sure the table exists
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS previous_branch (
+            repo_path TEXT PRIMARY KEY,
+            branch_name TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+        [],
+    )
+    .ok();
+
+    let result = conn.query_row(
+        "SELECT branch_name FROM previous_branch WHERE repo_path = ?1",
+        [repo_path],
+        |row| row.get::<_, String>(0),
+    );
+
+    match result {
+        Ok(branch) => Ok(Some(branch)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e).context("Failed to get previous branch"),
+    }
+}
+

@@ -53,3 +53,23 @@ pub fn get_repo_root() -> Result<String> {
     Ok(path)
 }
 
+/// Get the name of the current branch
+pub fn get_current_branch() -> Result<String> {
+    let output = Command::new("git")
+        .args(["branch", "--show-current"])
+        .output()
+        .context("Failed to execute git branch --show-current")?;
+
+    if !output.status.success() {
+        bail!("Failed to get current branch (detached HEAD?)");
+    }
+
+    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    
+    if branch.is_empty() {
+        bail!("Not on a branch (detached HEAD)");
+    }
+    
+    Ok(branch)
+}
+
