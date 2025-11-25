@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+  discussions: write
+
 jobs:
   build:
     name: Build for ${{ matrix.os }} (${{ matrix.arch }})
