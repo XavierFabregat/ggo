@@ -27,9 +27,9 @@ fn main() -> Result<()> {
     }
 
     if cli.list {
-        list_matching_branches(pattern, cli.ignore_case)?;
+        list_matching_branches(pattern, cli.ignore_case, !cli.no_fuzzy)?;
     } else {
-        let branch = find_and_checkout_branch(pattern, cli.ignore_case, cli.interactive)?;
+        let branch = find_and_checkout_branch(pattern, cli.ignore_case, !cli.no_fuzzy, cli.interactive)?;
         println!("Switched to branch '{}'", branch);
     }
 
@@ -66,23 +66,35 @@ fn show_stats() -> Result<()> {
     Ok(())
 }
 
-fn list_matching_branches(pattern: &str, ignore_case: bool) -> Result<()> {
+fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> Result<()> {
     let branches = git::get_branches()?;
-    let matches = matcher::filter_branches(&branches, pattern, ignore_case);
-
-    if matches.is_empty() {
-        bail!("No branches found matching '{}'", pattern);
-    }
-
-    // Get frecency data for ranking
     let repo_path = git::get_repo_root().unwrap_or_default();
     let records = storage::get_branch_records(&repo_path).unwrap_or_default();
-    
-    // Convert matches to owned strings for frecency sorting
-    let match_strings: Vec<String> = matches.iter().map(|s| s.to_string()).collect();
-    let ranked = frecency::sort_branches_by_frecency(&match_strings, &records);
 
-    println!("Branches matching '{}' (ranked by frecency):\n", pattern);
+    let ranked = if use_fuzzy {
+        // Use fuzzy matching and combine with frecency
+        let fuzzy_matches = matcher::fuzzy_filter_branches(&branches, pattern, ignore_case);
+        
+        if fuzzy_matches.is_empty() {
+            bail!("No branches found matching '{}'", pattern);
+        }
+
+        combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records)
+    } else {
+        // Use exact substring matching
+        let matches = matcher::filter_branches(&branches, pattern, ignore_case);
+        
+        if matches.is_empty() {
+            bail!("No branches found matching '{}'", pattern);
+        }
+
+        let match_strings: Vec<String> = matches.iter().map(|s| s.to_string()).collect();
+        frecency::sort_branches_by_frecency(&match_strings, &records)
+    };
+
+    let match_type = if use_fuzzy { "fuzzy matching" } else { "substring matching" };
+    println!("Branches matching '{}' ({}+ frecency):\n", pattern, match_type);
+    
     for (i, (branch, score)) in ranked.iter().enumerate() {
         let marker = if i == 0 { "→" } else { " " };
         let score_display = if *score > 0.0 {
@@ -125,28 +137,74 @@ fn checkout_previous_branch() -> Result<()> {
     Ok(())
 }
 
-fn find_and_checkout_branch(pattern: &str, ignore_case: bool, interactive: bool) -> Result<String> {
+/// Combine fuzzy match scores with frecency scores for final ranking
+/// Formula: combined_score = fuzzy_score + (frecency_score * 10)
+/// This gives weight to both good fuzzy matches and frequently-used branches
+fn combine_fuzzy_and_frecency_scores(
+    fuzzy_matches: &[matcher::ScoredMatch],
+    records: &[storage::BranchRecord],
+) -> Vec<(String, f64)> {
+    use std::collections::HashMap;
+    
+    // Build a map of branch -> frecency score
+    let frecency_map: HashMap<&str, f64> = records
+        .iter()
+        .map(|r| (r.branch_name.as_str(), frecency::calculate_score(r)))
+        .collect();
+    
+    let mut combined: Vec<(String, f64)> = fuzzy_matches
+        .iter()
+        .map(|m| {
+            let fuzzy_score = m.score as f64;
+            let frecency_score = frecency_map.get(m.branch.as_str()).copied().unwrap_or(0.0);
+            
+            // Combine scores: fuzzy match quality + (frecency * weight)
+            // Frecency gets a 10x multiplier to give it significant weight
+            let combined_score = fuzzy_score + (frecency_score * 10.0);
+            
+            (m.branch.clone(), combined_score)
+        })
+        .collect();
+    
+    // Sort by combined score descending
+    combined.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    
+    combined
+}
+
+fn find_and_checkout_branch(pattern: &str, ignore_case: bool, use_fuzzy: bool, interactive: bool) -> Result<String> {
     let branches = git::get_branches()?;
-    let matches = matcher::filter_branches(&branches, pattern, ignore_case);
-
-    if matches.is_empty() {
-        bail!("No branch found matching '{}'", pattern);
-    }
-
-    // Get frecency data for ranking
     let repo_path = git::get_repo_root().unwrap_or_default();
     let records = storage::get_branch_records(&repo_path).unwrap_or_default();
-    
-    // Convert matches to owned strings for frecency sorting
-    let match_strings: Vec<String> = matches.iter().map(|s| s.to_string()).collect();
+
+    let ranked = if use_fuzzy {
+        // Use fuzzy matching and combine with frecency
+        let fuzzy_matches = matcher::fuzzy_filter_branches(&branches, pattern, ignore_case);
+        
+        if fuzzy_matches.is_empty() {
+            bail!("No branch found matching '{}'", pattern);
+        }
+
+        combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records)
+    } else {
+        // Use exact substring matching
+        let matches = matcher::filter_branches(&branches, pattern, ignore_case);
+        
+        if matches.is_empty() {
+            bail!("No branch found matching '{}'", pattern);
+        }
+
+        let match_strings: Vec<String> = matches.iter().map(|s| s.to_string()).collect();
+        frecency::sort_branches_by_frecency(&match_strings, &records)
+    };
 
     // Determine which branch to checkout
-    let branch_to_checkout = if interactive || match_strings.len() > 1 {
+    let branch_to_checkout = if interactive || ranked.len() > 1 {
         // Use interactive mode if explicitly requested OR if there are multiple matches
-        interactive::select_branch(&match_strings, &records)?
+        let branch_list: Vec<String> = ranked.iter().map(|(b, _)| b.clone()).collect();
+        interactive::select_branch(&branch_list, &records)?
     } else {
-        // Single match or non-interactive: use best frecency match
-        let ranked = frecency::sort_branches_by_frecency(&match_strings, &records);
+        // Single match or non-interactive: use best match
         ranked[0].0.clone()
     };
 

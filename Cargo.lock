@@ -256,6 +256,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dirs",
+ "fuzzy-matcher",
  "inquire",
  "rusqlite",
 ]
