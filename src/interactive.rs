@@ -45,11 +45,14 @@ impl std::fmt::Display for BranchOption {
 }
 
 /// Truncate a string to a maximum length, adding ellipsis if needed
+/// Uses character count (not byte count) to safely handle multi-byte UTF-8 characters
 fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    let char_count = s.chars().count();
+    if char_count <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let truncated: String = s.chars().take(max_len.saturating_sub(3)).collect();
+        format!("{}...", truncated)
     }
 }
 
@@ -99,6 +102,14 @@ mod tests {
     fn test_truncate() {
         assert_eq!(truncate("short", 10), "short");
         assert_eq!(truncate("this is a very long branch name", 15), "this is a ve...");
+        
+        // Test with multi-byte UTF-8 characters (emoji, etc.)
+        assert_eq!(truncate("feature/🚀-rocket", 20), "feature/🚀-rocket");
+        assert_eq!(truncate("feature/🚀-rocket-launch-system", 15), "feature/🚀-ro...");
+        
+        // Test with other Unicode characters
+        assert_eq!(truncate("café-branch", 20), "café-branch");
+        assert_eq!(truncate("日本語ブランチ名前", 8), "日本語ブラ...");
     }
 
     #[test]
