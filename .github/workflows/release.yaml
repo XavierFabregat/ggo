@@ -86,4 +86,4 @@ jobs:
           files: artifacts/*/*
           generate_release_notes: true
           make_latest: true
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_TOKEN }}
