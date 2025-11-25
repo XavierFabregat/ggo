@@ -1,6 +1,7 @@
+use anyhow::{Context, Result, bail};
 use clap::Parser;
-use std::process::{Command, exit};
 use std::io::BufRead;
+use std::process::Command;
 
 /// ggo - Smart Git Navigation Tool
 ///
@@ -12,6 +13,7 @@ use std::io::BufRead;
 ///     ggo expo         Checkout first branch containing 'expo'
 ///     ggo feature      Checkout first branch containing 'feature'
 ///     ggo main         Checkout first branch containing 'main'
+///     ggo -l feat      List all branches matching 'feat'
 ///
 /// NOTE:
 ///     This is the MVP version. Future versions will include:
@@ -26,67 +28,91 @@ use std::io::BufRead;
 struct Cli {
     /// Search pattern to match branch names
     pattern: String,
+
+    /// List matching branches without checking out
+    #[arg(short, long)]
+    list: bool,
 }
 
-fn main() {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    match find_and_checkout_branch(&cli.pattern) {
-        Ok(branch) => println!("Switched to branch '{}'", branch),
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            exit(1);
-        }
+    if cli.list {
+        list_matching_branches(&cli.pattern)?;
+    } else {
+        let branch = find_and_checkout_branch(&cli.pattern)?;
+        println!("Switched to branch '{}'", branch);
     }
+
+    Ok(())
 }
 
-fn find_and_checkout_branch(pattern: &str) -> Result<String, String> {
+fn list_matching_branches(pattern: &str) -> Result<()> {
+    let branches = get_git_branches()?;
+    let matches: Vec<_> = branches
+        .iter()
+        .filter(|branch| branch.contains(pattern))
+        .collect();
+
+    if matches.is_empty() {
+        bail!("No branches found matching '{}'", pattern);
+    }
+
+    println!("Branches matching '{}':", pattern);
+    for (i, branch) in matches.iter().enumerate() {
+        let marker = if i == 0 { "→" } else { " " };
+        println!("  {} {}", marker, branch);
+    }
+
+    if matches.len() > 1 {
+        println!("\n({} matches, → indicates checkout target)", matches.len());
+    }
+
+    Ok(())
+}
+
+fn find_and_checkout_branch(pattern: &str) -> Result<String> {
     let branches = get_git_branches()?;
 
     let matching_branch = branches
         .iter()
         .find(|branch| branch.contains(pattern))
-        .ok_or_else(|| format!("No branch found matching '{}'", pattern))?;
+        .ok_or_else(|| anyhow::anyhow!("No branch found matching '{}'", pattern))?;
 
     checkout_branch(matching_branch)?;
 
     Ok(matching_branch.clone())
 }
 
-fn get_git_branches() -> Result<Vec<String>, String> {
+fn get_git_branches() -> Result<Vec<String>> {
     let output = Command::new("git")
-        .args(&["branch"])
+        .args(["branch"])
         .output()
-        .map_err(|e| format!("Failed to execute git branch: {}", e))?;
+        .context("Failed to execute git branch")?;
 
     if !output.status.success() {
-        return Err("Not a git repository or git command failed".to_string());
+        bail!("Not a git repository or git command failed");
     }
 
     let branches: Vec<String> = output
         .stdout
         .lines()
         .filter_map(|line| line.ok())
-        .map(|line| {
-            line.trim()
-                .trim_start_matches('*')
-                .trim()
-                .to_string()
-        })
+        .map(|line| line.trim().trim_start_matches('*').trim().to_string())
         .collect();
 
     Ok(branches)
 }
 
-fn checkout_branch(branch: &str) -> Result<(), String> {
+fn checkout_branch(branch: &str) -> Result<()> {
     let output = Command::new("git")
-        .args(&["checkout", branch])
+        .args(["checkout", branch])
         .output()
-        .map_err(|e| format!("Failed to execute git checkout: {}", e))?;
+        .context("Failed to execute git checkout")?;
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Git checkout failed: {}", error));
+        bail!("Git checkout failed: {}", error.trim());
     }
 
     Ok(())
