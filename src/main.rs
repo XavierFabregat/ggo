@@ -1,19 +1,37 @@
-use std::env;
+use clap::Parser;
 use std::process::{Command, exit};
 use std::io::BufRead;
 
+/// ggo - Smart Git Navigation Tool
+///
+/// Searches through your git branches and checks out the first
+/// branch that matches the given pattern. Pattern matching is done
+/// using simple substring matching.
+///
+/// EXAMPLES:
+///     ggo expo         Checkout first branch containing 'expo'
+///     ggo feature      Checkout first branch containing 'feature'
+///     ggo main         Checkout first branch containing 'main'
+///
+/// NOTE:
+///     This is the MVP version. Future versions will include:
+///     - Frecency-based branch ranking
+///     - Fuzzy matching
+///     - Interactive selection mode
+///     - Repository tracking
+#[derive(Parser)]
+#[command(name = "ggo")]
+#[command(version)]
+#[command(about = "Smart Git Navigation Tool", long_about = None)]
+struct Cli {
+    /// Search pattern to match branch names
+    pattern: String,
+}
+
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let cli = Cli::parse();
 
-    if args.len() < 2 {
-        eprintln!("Usage: ggo <pattern>");
-        eprintln!("Example: ggo expo");
-        exit(1);
-    }
-
-    let pattern = &args[1];
-
-    match find_and_checkout_branch(pattern) {
+    match find_and_checkout_branch(&cli.pattern) {
         Ok(branch) => println!("Switched to branch '{}'", branch),
         Err(e) => {
             eprintln!("Error: {}", e);
