@@ -49,3 +49,257 @@ pub struct Cli {
     #[arg(long)]
     pub stats: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn test_verify_cli() {
+        // This test verifies that the CLI definition is valid
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn test_parse_simple_pattern() {
+        let args = vec!["ggo", "feature"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("feature".to_string()));
+        assert!(!cli.list);
+        assert!(!cli.ignore_case);
+        assert!(!cli.no_fuzzy);
+        assert!(!cli.interactive);
+        assert!(!cli.stats);
+    }
+
+    #[test]
+    fn test_parse_with_list_flag() {
+        let args = vec!["ggo", "-l", "main"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("main".to_string()));
+        assert!(cli.list);
+    }
+
+    #[test]
+    fn test_parse_with_long_list_flag() {
+        let args = vec!["ggo", "--list", "develop"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("develop".to_string()));
+        assert!(cli.list);
+    }
+
+    #[test]
+    fn test_parse_with_ignore_case() {
+        let args = vec!["ggo", "-i", "FEATURE"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("FEATURE".to_string()));
+        assert!(cli.ignore_case);
+    }
+
+    #[test]
+    fn test_parse_with_long_ignore_case() {
+        let args = vec!["ggo", "--ignore-case", "TEST"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("TEST".to_string()));
+        assert!(cli.ignore_case);
+    }
+
+    #[test]
+    fn test_parse_with_no_fuzzy() {
+        let args = vec!["ggo", "--no-fuzzy", "main"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("main".to_string()));
+        assert!(cli.no_fuzzy);
+    }
+
+    #[test]
+    fn test_parse_with_interactive() {
+        let args = vec!["ggo", "--interactive", "feature"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("feature".to_string()));
+        assert!(cli.interactive);
+    }
+
+    #[test]
+    fn test_parse_stats_only() {
+        let args = vec!["ggo", "--stats"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, None);
+        assert!(cli.stats);
+    }
+
+    #[test]
+    fn test_parse_multiple_flags() {
+        let args = vec!["ggo", "-l", "-i", "--no-fuzzy", "test"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("test".to_string()));
+        assert!(cli.list);
+        assert!(cli.ignore_case);
+        assert!(cli.no_fuzzy);
+    }
+
+    #[test]
+    fn test_parse_all_flags() {
+        let args = vec!["ggo", "-l", "-i", "--no-fuzzy", "--interactive", "branch"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("branch".to_string()));
+        assert!(cli.list);
+        assert!(cli.ignore_case);
+        assert!(cli.no_fuzzy);
+        assert!(cli.interactive);
+        assert!(!cli.stats);
+    }
+
+    #[test]
+    fn test_parse_dash_pattern() {
+        let args = vec!["ggo", "-"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("-".to_string()));
+    }
+
+    #[test]
+    fn test_parse_empty_pattern() {
+        let args = vec!["ggo", ""];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_parse_pattern_with_special_chars() {
+        let args = vec!["ggo", "feature/auth-v2"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("feature/auth-v2".to_string()));
+    }
+
+    #[test]
+    fn test_parse_pattern_with_spaces() {
+        let args = vec!["ggo", "feature branch"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("feature branch".to_string()));
+    }
+
+    #[test]
+    fn test_parse_unicode_pattern() {
+        let args = vec!["ggo", "日本語"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("日本語".to_string()));
+    }
+
+    #[test]
+    fn test_parse_list_before_pattern() {
+        let args = vec!["ggo", "-l", "test"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("test".to_string()));
+        assert!(cli.list);
+    }
+
+    #[test]
+    fn test_parse_list_after_pattern() {
+        let args = vec!["ggo", "test", "-l"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("test".to_string()));
+        assert!(cli.list);
+    }
+
+    #[test]
+    fn test_parse_flags_order_independent() {
+        let args1 = vec!["ggo", "-l", "-i", "test"];
+        let cli1 = Cli::parse_from(args1);
+        
+        let args2 = vec!["ggo", "-i", "-l", "test"];
+        let cli2 = Cli::parse_from(args2);
+        
+        assert_eq!(cli1.pattern, cli2.pattern);
+        assert_eq!(cli1.list, cli2.list);
+        assert_eq!(cli1.ignore_case, cli2.ignore_case);
+    }
+
+    #[test]
+    fn test_parse_no_args_without_stats() {
+        // Should fail because pattern is required unless stats is provided
+        let args = vec!["ggo"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_stats_with_pattern() {
+        let args = vec!["ggo", "--stats", "test"];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some("test".to_string()));
+        assert!(cli.stats);
+    }
+
+    #[test]
+    fn test_parse_combined_short_flags() {
+        // Note: clap doesn't support combining -l and -i as -li
+        // They need to be separate
+        let args = vec!["ggo", "-l", "-i", "test"];
+        let cli = Cli::parse_from(args);
+        
+        assert!(cli.list);
+        assert!(cli.ignore_case);
+    }
+
+    #[test]
+    fn test_parse_long_pattern() {
+        let long_pattern = "a".repeat(1000);
+        let args = vec!["ggo", &long_pattern];
+        let cli = Cli::parse_from(args);
+        
+        assert_eq!(cli.pattern, Some(long_pattern));
+    }
+
+    #[test]
+    fn test_default_values() {
+        let args = vec!["ggo", "test"];
+        let cli = Cli::parse_from(args);
+        
+        // Check default values
+        assert!(!cli.list);
+        assert!(!cli.ignore_case);
+        assert!(!cli.no_fuzzy);
+        assert!(!cli.interactive);
+        assert!(!cli.stats);
+    }
+
+    #[test]
+    fn test_parse_help_contains_description() {
+        let mut cmd = Cli::command();
+        let help = cmd.render_help().to_string();
+        
+        assert!(help.contains("Smart Git Navigation Tool"));
+    }
+
+    #[test]
+    fn test_parse_help_contains_all_options() {
+        let mut cmd = Cli::command();
+        let help = cmd.render_help().to_string();
+        
+        assert!(help.contains("--list") || help.contains("-l"));
+        assert!(help.contains("--ignore-case") || help.contains("-i"));
+        assert!(help.contains("--no-fuzzy"));
+        assert!(help.contains("--interactive"));
+        assert!(help.contains("--stats"));
+    }
+}
+

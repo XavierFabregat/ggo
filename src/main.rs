@@ -229,3 +229,299 @@ fn find_and_checkout_branch(pattern: &str, ignore_case: bool, use_fuzzy: bool, i
 
     Ok(branch_to_checkout)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::BranchRecord;
+    use crate::matcher::ScoredMatch;
+
+    #[test]
+    fn test_combine_fuzzy_and_frecency_scores_empty() {
+        let fuzzy_matches: Vec<ScoredMatch> = vec![];
+        let records: Vec<BranchRecord> = vec![];
+        
+        let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_combine_fuzzy_and_frecency_scores_no_records() {
+        let fuzzy_matches = vec![
+            ScoredMatch {
+                branch: "feature/auth".to_string(),
+                score: 100,
+            },
+            ScoredMatch {
+                branch: "feature/dashboard".to_string(),
+                score: 80,
+            },
+        ];
+        let records: Vec<BranchRecord> = vec![];
+        
+        let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
+        
+        assert_eq!(result.len(), 2);
+        // Without frecency, should sort by fuzzy score only
+        assert_eq!(result[0].0, "feature/auth");
+        assert_eq!(result[0].1, 100.0);
+        assert_eq!(result[1].0, "feature/dashboard");
+        assert_eq!(result[1].1, 80.0);
+    }
+
+    #[test]
+    fn test_combine_fuzzy_and_frecency_scores_with_records() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let fuzzy_matches = vec![
+            ScoredMatch {
+                branch: "feature/auth".to_string(),
+                score: 80,
+            },
+            ScoredMatch {
+                branch: "feature/dashboard".to_string(),
+                score: 100,
+            },
+        ];
+        
+        let records = vec![
+            BranchRecord {
+                repo_path: "/test".to_string(),
+                branch_name: "feature/auth".to_string(),
+                switch_count: 10,
+                last_used: now - 60, // Recent: frecency score = 40.0
+            },
+        ];
+        
+        let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
+        
+        assert_eq!(result.len(), 2);
+        // feature/auth should rank higher due to frecency
+        // auth: 80 + (40.0 * 10) = 480
+        // dashboard: 100 + (0 * 10) = 100
+        assert_eq!(result[0].0, "feature/auth");
+        assert_eq!(result[0].1, 480.0);
+        assert_eq!(result[1].0, "feature/dashboard");
+        assert_eq!(result[1].1, 100.0);
+    }
+
+    #[test]
+    fn test_combine_fuzzy_and_frecency_scores_balanced() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let fuzzy_matches = vec![
+            ScoredMatch {
+                branch: "branch-a".to_string(),
+                score: 100,
+            },
+            ScoredMatch {
+                branch: "branch-b".to_string(),
+                score: 50,
+            },
+        ];
+        
+        let records = vec![
+            BranchRecord {
+                repo_path: "/test".to_string(),
+                branch_name: "branch-a".to_string(),
+                switch_count: 1,
+                last_used: now - 3000000, // Old: frecency = 0.25
+            },
+            BranchRecord {
+                repo_path: "/test".to_string(),
+                branch_name: "branch-b".to_string(),
+                switch_count: 5,
+                last_used: now - 60, // Recent: frecency = 20.0
+            },
+        ];
+        
+        let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
+        
+        assert_eq!(result.len(), 2);
+        // branch-a: 100 + (0.25 * 10) = 102.5
+        // branch-b: 50 + (20.0 * 10) = 250.0
+        assert_eq!(result[0].0, "branch-b");
+        assert_eq!(result[1].0, "branch-a");
+    }
+
+    #[test]
+    fn test_combine_fuzzy_and_frecency_scores_high_frecency() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let fuzzy_matches = vec![
+            ScoredMatch {
+                branch: "new-branch".to_string(),
+                score: 100,
+            },
+            ScoredMatch {
+                branch: "popular-branch".to_string(),
+                score: 60,
+            },
+        ];
+        
+        let records = vec![
+            BranchRecord {
+                repo_path: "/test".to_string(),
+                branch_name: "popular-branch".to_string(),
+                switch_count: 20,
+                last_used: now - 60, // Recent: frecency = 80.0
+            },
+        ];
+        
+        let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
+        
+        assert_eq!(result.len(), 2);
+        // popular-branch: 60 + (80.0 * 10) = 860.0
+        // new-branch: 100 + (0 * 10) = 100.0
+        assert_eq!(result[0].0, "popular-branch");
+        assert!(result[0].1 > 800.0);
+    }
+
+    #[test]
+    fn test_combine_fuzzy_and_frecency_scores_single_match() {
+        let fuzzy_matches = vec![
+            ScoredMatch {
+                branch: "only-match".to_string(),
+                score: 75,
+            },
+        ];
+        let records: Vec<BranchRecord> = vec![];
+        
+        let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
+        
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, "only-match");
+        assert_eq!(result[0].1, 75.0);
+    }
+
+    #[test]
+    fn test_combine_fuzzy_and_frecency_scores_all_same_fuzzy() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let fuzzy_matches = vec![
+            ScoredMatch {
+                branch: "branch-a".to_string(),
+                score: 100,
+            },
+            ScoredMatch {
+                branch: "branch-b".to_string(),
+                score: 100,
+            },
+        ];
+        
+        let records = vec![
+            BranchRecord {
+                repo_path: "/test".to_string(),
+                branch_name: "branch-b".to_string(),
+                switch_count: 5,
+                last_used: now - 60, // Recent
+            },
+        ];
+        
+        let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
+        
+        // branch-b should rank higher due to frecency
+        assert_eq!(result[0].0, "branch-b");
+        assert!(result[0].1 > result[1].1);
+    }
+
+    #[test]
+    fn test_combine_fuzzy_and_frecency_scores_partial_overlap() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let fuzzy_matches = vec![
+            ScoredMatch {
+                branch: "branch-a".to_string(),
+                score: 90,
+            },
+            ScoredMatch {
+                branch: "branch-b".to_string(),
+                score: 85,
+            },
+            ScoredMatch {
+                branch: "branch-c".to_string(),
+                score: 80,
+            },
+        ];
+        
+        let records = vec![
+            BranchRecord {
+                repo_path: "/test".to_string(),
+                branch_name: "branch-b".to_string(),
+                switch_count: 3,
+                last_used: now - 60,
+            },
+        ];
+        
+        let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
+        
+        assert_eq!(result.len(), 3);
+        // branch-b should be first due to frecency boost
+        assert_eq!(result[0].0, "branch-b");
+    }
+
+    #[test]
+    fn test_combine_fuzzy_and_frecency_scores_zero_fuzzy_score() {
+        let fuzzy_matches = vec![
+            ScoredMatch {
+                branch: "branch-a".to_string(),
+                score: 0,
+            },
+        ];
+        let records: Vec<BranchRecord> = vec![];
+        
+        let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
+        
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1, 0.0);
+    }
+
+    #[test]
+    fn test_combine_fuzzy_and_frecency_ordering_consistency() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let fuzzy_matches = vec![
+            ScoredMatch {
+                branch: "high-fuzzy-low-frecency".to_string(),
+                score: 100,
+            },
+            ScoredMatch {
+                branch: "low-fuzzy-high-frecency".to_string(),
+                score: 20,
+            },
+        ];
+        
+        let records = vec![
+            BranchRecord {
+                repo_path: "/test".to_string(),
+                branch_name: "low-fuzzy-high-frecency".to_string(),
+                switch_count: 50,
+                last_used: now - 60, // Recent, high frecency
+            },
+        ];
+        
+        let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
+        
+        // Low fuzzy but high frecency should win
+        assert_eq!(result[0].0, "low-fuzzy-high-frecency");
+        assert!(result[0].1 > result[1].1);
+    }
+}

@@ -144,6 +144,78 @@ mod tests {
     }
 
     #[test]
+    fn test_calculate_score_within_hour() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let record = BranchRecord {
+            repo_path: "/test".to_string(),
+            branch_name: "main".to_string(),
+            switch_count: 5,
+            last_used: now - 3599, // Just under 1 hour ago
+        };
+
+        let score = calculate_score(&record);
+        assert_eq!(score, 20.0); // 5 * 4.0
+    }
+
+    #[test]
+    fn test_calculate_score_within_day() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let record = BranchRecord {
+            repo_path: "/test".to_string(),
+            branch_name: "develop".to_string(),
+            switch_count: 8,
+            last_used: now - 43200, // 12 hours ago
+        };
+
+        let score = calculate_score(&record);
+        assert_eq!(score, 16.0); // 8 * 2.0
+    }
+
+    #[test]
+    fn test_calculate_score_within_week() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let record = BranchRecord {
+            repo_path: "/test".to_string(),
+            branch_name: "feature".to_string(),
+            switch_count: 6,
+            last_used: now - 259200, // 3 days ago
+        };
+
+        let score = calculate_score(&record);
+        assert_eq!(score, 6.0); // 6 * 1.0
+    }
+
+    #[test]
+    fn test_calculate_score_within_month() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let record = BranchRecord {
+            repo_path: "/test".to_string(),
+            branch_name: "bugfix".to_string(),
+            switch_count: 4,
+            last_used: now - 1209600, // 14 days ago
+        };
+
+        let score = calculate_score(&record);
+        assert_eq!(score, 2.0); // 4 * 0.5
+    }
+
+    #[test]
     fn test_calculate_score_old() {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -159,6 +231,274 @@ mod tests {
 
         let score = calculate_score(&record);
         assert_eq!(score, 2.5); // 10 * 0.25
+    }
+
+    #[test]
+    fn test_calculate_score_zero_switches() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let record = BranchRecord {
+            repo_path: "/test".to_string(),
+            branch_name: "unused".to_string(),
+            switch_count: 0,
+            last_used: now - 60,
+        };
+
+        let score = calculate_score(&record);
+        assert_eq!(score, 0.0); // 0 * 4.0
+    }
+
+    #[test]
+    fn test_rank_branches_empty() {
+        let records: Vec<BranchRecord> = vec![];
+        let ranked = rank_branches(&records);
+        assert!(ranked.is_empty());
+    }
+
+    #[test]
+    fn test_rank_branches_single() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let records = vec![BranchRecord {
+            repo_path: "/test".to_string(),
+            branch_name: "main".to_string(),
+            switch_count: 5,
+            last_used: now - 60,
+        }];
+
+        let ranked = rank_branches(&records);
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].name, "main");
+        assert_eq!(ranked[0].score, 20.0);
+        assert_eq!(ranked[0].switch_count, 5);
+    }
+
+    #[test]
+    fn test_rank_branches_sorted_by_score() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let records = vec![
+            BranchRecord {
+                repo_path: "/test".to_string(),
+                branch_name: "old".to_string(),
+                switch_count: 10,
+                last_used: now - 3000000, // Old: score = 2.5
+            },
+            BranchRecord {
+                repo_path: "/test".to_string(),
+                branch_name: "recent".to_string(),
+                switch_count: 5,
+                last_used: now - 60, // Recent: score = 20.0
+            },
+            BranchRecord {
+                repo_path: "/test".to_string(),
+                branch_name: "medium".to_string(),
+                switch_count: 3,
+                last_used: now - 43200, // Day: score = 6.0
+            },
+        ];
+
+        let ranked = rank_branches(&records);
+        assert_eq!(ranked.len(), 3);
+        assert_eq!(ranked[0].name, "recent");
+        assert_eq!(ranked[0].score, 20.0);
+        assert_eq!(ranked[1].name, "medium");
+        assert_eq!(ranked[1].score, 6.0);
+        assert_eq!(ranked[2].name, "old");
+        assert_eq!(ranked[2].score, 2.5);
+    }
+
+    #[test]
+    fn test_sort_branches_by_frecency_empty_branches() {
+        let branches: Vec<String> = vec![];
+        let records: Vec<BranchRecord> = vec![];
+        let sorted = sort_branches_by_frecency(&branches, &records);
+        assert!(sorted.is_empty());
+    }
+
+    #[test]
+    fn test_sort_branches_by_frecency_no_records() {
+        let branches = vec![
+            "main".to_string(),
+            "develop".to_string(),
+            "feature".to_string(),
+        ];
+        let records: Vec<BranchRecord> = vec![];
+        
+        let sorted = sort_branches_by_frecency(&branches, &records);
+        assert_eq!(sorted.len(), 3);
+        
+        // All should have score 0.0
+        for (_, score) in &sorted {
+            assert_eq!(*score, 0.0);
+        }
+    }
+
+    #[test]
+    fn test_sort_branches_by_frecency_with_records() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let branches = vec![
+            "main".to_string(),
+            "develop".to_string(),
+            "feature".to_string(),
+        ];
+        
+        let records = vec![
+            BranchRecord {
+                repo_path: "/test".to_string(),
+                branch_name: "develop".to_string(),
+                switch_count: 10,
+                last_used: now - 60, // score = 40.0
+            },
+            BranchRecord {
+                repo_path: "/test".to_string(),
+                branch_name: "main".to_string(),
+                switch_count: 5,
+                last_used: now - 43200, // score = 10.0
+            },
+        ];
+        
+        let sorted = sort_branches_by_frecency(&branches, &records);
+        assert_eq!(sorted.len(), 3);
+        assert_eq!(sorted[0].0, "develop");
+        assert_eq!(sorted[0].1, 40.0);
+        assert_eq!(sorted[1].0, "main");
+        assert_eq!(sorted[1].1, 10.0);
+        assert_eq!(sorted[2].0, "feature");
+        assert_eq!(sorted[2].1, 0.0);
+    }
+
+    #[test]
+    fn test_sort_branches_by_frecency_partial_records() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let branches = vec![
+            "branch-a".to_string(),
+            "branch-b".to_string(),
+            "branch-c".to_string(),
+        ];
+        
+        let records = vec![
+            BranchRecord {
+                repo_path: "/test".to_string(),
+                branch_name: "branch-b".to_string(),
+                switch_count: 3,
+                last_used: now - 60,
+            },
+        ];
+        
+        let sorted = sort_branches_by_frecency(&branches, &records);
+        assert_eq!(sorted[0].0, "branch-b");
+        assert!(sorted[0].1 > 0.0);
+        assert_eq!(sorted[1].1, 0.0);
+        assert_eq!(sorted[2].1, 0.0);
+    }
+
+    #[test]
+    fn test_format_relative_time_just_now() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        assert_eq!(format_relative_time(now), "just now");
+        assert_eq!(format_relative_time(now - 30), "just now");
+        assert_eq!(format_relative_time(now - 59), "just now");
+    }
+
+    #[test]
+    fn test_format_relative_time_minutes() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        assert_eq!(format_relative_time(now - 60), "1m ago");
+        assert_eq!(format_relative_time(now - 120), "2m ago");
+        assert_eq!(format_relative_time(now - 1800), "30m ago");
+        assert_eq!(format_relative_time(now - 3599), "59m ago");
+    }
+
+    #[test]
+    fn test_format_relative_time_hours() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        assert_eq!(format_relative_time(now - 3600), "1h ago");
+        assert_eq!(format_relative_time(now - 7200), "2h ago");
+        assert_eq!(format_relative_time(now - 43200), "12h ago");
+        assert_eq!(format_relative_time(now - 86399), "23h ago");
+    }
+
+    #[test]
+    fn test_format_relative_time_days() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        assert_eq!(format_relative_time(now - 86400), "1d ago");
+        assert_eq!(format_relative_time(now - 172800), "2d ago");
+        assert_eq!(format_relative_time(now - 432000), "5d ago");
+        assert_eq!(format_relative_time(now - 604799), "6d ago");
+    }
+
+    #[test]
+    fn test_format_relative_time_weeks() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        assert_eq!(format_relative_time(now - 604800), "1w ago");
+        assert_eq!(format_relative_time(now - 1209600), "2w ago");
+        assert_eq!(format_relative_time(now - 2591999), "4w ago");
+    }
+
+    #[test]
+    fn test_format_relative_time_months() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        assert_eq!(format_relative_time(now - 2592000), "1mo ago");
+        assert_eq!(format_relative_time(now - 5184000), "2mo ago");
+        assert_eq!(format_relative_time(now - 7776000), "3mo ago");
+        assert_eq!(format_relative_time(now - 31536000), "12mo ago");
+    }
+
+    #[test]
+    fn test_format_relative_time_boundary_conditions() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        // Exact boundaries
+        assert_eq!(format_relative_time(now - 0), "just now");
+        assert_eq!(format_relative_time(now - 3600), "1h ago");
+        assert_eq!(format_relative_time(now - 86400), "1d ago");
+        assert_eq!(format_relative_time(now - 604800), "1w ago");
+        assert_eq!(format_relative_time(now - 2592000), "1mo ago");
     }
 }
 
