@@ -140,10 +140,12 @@ pub struct Stats {
     pub total_switches: i64,
     pub unique_branches: i64,
     pub unique_repos: i64,
+    pub db_path: PathBuf,
 }
 
 pub fn get_stats() -> Result<Stats> {
     let conn = open_db()?;
+    let db_path = get_db_path()?;
 
     let total_switches: i64 = conn
         .query_row("SELECT COALESCE(SUM(switch_count), 0) FROM branches", [], |row| row.get(0))
@@ -161,6 +163,7 @@ pub fn get_stats() -> Result<Stats> {
         total_switches,
         unique_branches,
         unique_repos,
+        db_path,
     })
 }
 

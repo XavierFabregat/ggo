@@ -37,6 +37,7 @@ fn show_stats() -> Result<()> {
     println!("Total branch switches: {}", stats.total_switches);
     println!("Unique branches tracked: {}", stats.unique_branches);
     println!("Repositories: {}", stats.unique_repos);
+    println!("Database location: {}", stats.db_path.display());
 
     if !records.is_empty() {
         println!("\n🔥 Top branches by frecency:\n");
