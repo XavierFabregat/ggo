@@ -20,7 +20,7 @@ impl std::fmt::Display for BranchOption {
         } else {
             "new".to_string()
         };
-        
+
         let usage_str = if self.switch_count > 0 {
             format!("{} switches", self.switch_count)
         } else {
@@ -57,10 +57,7 @@ fn truncate(s: &str, max_len: usize) -> String {
 }
 
 /// Show an interactive menu to select a branch
-pub fn select_branch(
-    branches: &[String],
-    records: &[BranchRecord],
-) -> Result<String> {
+pub fn select_branch(branches: &[String], records: &[BranchRecord]) -> Result<String> {
     // Rank branches by frecency
     let ranked = frecency::sort_branches_by_frecency(branches, records);
 
@@ -82,8 +79,10 @@ pub fn select_branch(
     }
 
     // Show header
-    println!("\n{:<40} │ {:>12} │ {:>12} │ Last used", 
-             "Branch", "Frecency", "Usage");
+    println!(
+        "\n{:<40} │ {:>12} │ {:>12} │ Last used",
+        "Branch", "Frecency", "Usage"
+    );
     println!("{}", "─".repeat(85));
 
     // Create the select prompt
@@ -101,12 +100,18 @@ mod tests {
     #[test]
     fn test_truncate() {
         assert_eq!(truncate("short", 10), "short");
-        assert_eq!(truncate("this is a very long branch name", 15), "this is a ve...");
-        
+        assert_eq!(
+            truncate("this is a very long branch name", 15),
+            "this is a ve..."
+        );
+
         // Test with multi-byte UTF-8 characters (emoji, etc.)
         assert_eq!(truncate("feature/🚀-rocket", 20), "feature/🚀-rocket");
-        assert_eq!(truncate("feature/🚀-rocket-launch-system", 15), "feature/🚀-ro...");
-        
+        assert_eq!(
+            truncate("feature/🚀-rocket-launch-system", 15),
+            "feature/🚀-ro..."
+        );
+
         // Test with other Unicode characters
         assert_eq!(truncate("café-branch", 20), "café-branch");
         assert_eq!(truncate("日本語ブランチ名前", 8), "日本語ブラ...");
@@ -140,8 +145,8 @@ mod tests {
     #[test]
     fn test_truncate_three_length() {
         // When max_len is 3 and string is 4 chars, it needs truncation
-        assert_eq!(truncate("tes", 3), "tes");  // Exactly 3 chars, no truncation
-        assert_eq!(truncate("test", 3), "...");  // 4 chars > 3, truncate to 0 + "..."
+        assert_eq!(truncate("tes", 3), "tes"); // Exactly 3 chars, no truncation
+        assert_eq!(truncate("test", 3), "..."); // 4 chars > 3, truncate to 0 + "..."
         assert_eq!(truncate("testing", 3), "...");
     }
 
@@ -248,4 +253,3 @@ mod tests {
         assert_eq!(option.last_used, cloned.last_used);
     }
 }
-

@@ -29,7 +29,8 @@ fn main() -> Result<()> {
     if cli.list {
         list_matching_branches(pattern, cli.ignore_case, !cli.no_fuzzy)?;
     } else {
-        let branch = find_and_checkout_branch(pattern, cli.ignore_case, !cli.no_fuzzy, cli.interactive)?;
+        let branch =
+            find_and_checkout_branch(pattern, cli.ignore_case, !cli.no_fuzzy, cli.interactive)?;
         println!("Switched to branch '{}'", branch);
     }
 
@@ -48,7 +49,7 @@ fn show_stats() -> Result<()> {
 
     if !records.is_empty() {
         println!("\n🔥 Top branches by frecency:\n");
-        
+
         let scored = frecency::rank_branches(&records);
         for (i, branch) in scored.iter().take(10).enumerate() {
             let time_ago = frecency::format_relative_time(branch.last_used);
@@ -74,7 +75,7 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
     let ranked = if use_fuzzy {
         // Use fuzzy matching and combine with frecency
         let fuzzy_matches = matcher::fuzzy_filter_branches(&branches, pattern, ignore_case);
-        
+
         if fuzzy_matches.is_empty() {
             bail!("No branches found matching '{}'", pattern);
         }
@@ -83,7 +84,7 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
     } else {
         // Use exact substring matching
         let matches = matcher::filter_branches(&branches, pattern, ignore_case);
-        
+
         if matches.is_empty() {
             bail!("No branches found matching '{}'", pattern);
         }
@@ -92,9 +93,16 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
         frecency::sort_branches_by_frecency(&match_strings, &records)
     };
 
-    let match_type = if use_fuzzy { "fuzzy matching" } else { "substring matching" };
-    println!("Branches matching '{}' ({}+ frecency):\n", pattern, match_type);
-    
+    let match_type = if use_fuzzy {
+        "fuzzy matching"
+    } else {
+        "substring matching"
+    };
+    println!(
+        "Branches matching '{}' ({}+ frecency):\n",
+        pattern, match_type
+    );
+
     for (i, (branch, score)) in ranked.iter().enumerate() {
         let marker = if i == 0 { "→" } else { " " };
         let score_display = if *score > 0.0 {
@@ -114,7 +122,7 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
 
 fn checkout_previous_branch() -> Result<()> {
     let repo_path = git::get_repo_root()?;
-    
+
     let previous_branch = storage::get_previous_branch(&repo_path)?
         .ok_or_else(|| anyhow::anyhow!("No previous branch found"))?;
 
@@ -145,34 +153,39 @@ fn combine_fuzzy_and_frecency_scores(
     records: &[storage::BranchRecord],
 ) -> Vec<(String, f64)> {
     use std::collections::HashMap;
-    
+
     // Build a map of branch -> frecency score
     let frecency_map: HashMap<&str, f64> = records
         .iter()
         .map(|r| (r.branch_name.as_str(), frecency::calculate_score(r)))
         .collect();
-    
+
     let mut combined: Vec<(String, f64)> = fuzzy_matches
         .iter()
         .map(|m| {
             let fuzzy_score = m.score as f64;
             let frecency_score = frecency_map.get(m.branch.as_str()).copied().unwrap_or(0.0);
-            
+
             // Combine scores: fuzzy match quality + (frecency * weight)
             // Frecency gets a 10x multiplier to give it significant weight
             let combined_score = fuzzy_score + (frecency_score * 10.0);
-            
+
             (m.branch.clone(), combined_score)
         })
         .collect();
-    
+
     // Sort by combined score descending
     combined.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    
+
     combined
 }
 
-fn find_and_checkout_branch(pattern: &str, ignore_case: bool, use_fuzzy: bool, interactive: bool) -> Result<String> {
+fn find_and_checkout_branch(
+    pattern: &str,
+    ignore_case: bool,
+    use_fuzzy: bool,
+    interactive: bool,
+) -> Result<String> {
     let branches = git::get_branches()?;
     let repo_path = git::get_repo_root().unwrap_or_default();
     let records = storage::get_branch_records(&repo_path).unwrap_or_default();
@@ -180,7 +193,7 @@ fn find_and_checkout_branch(pattern: &str, ignore_case: bool, use_fuzzy: bool, i
     let ranked = if use_fuzzy {
         // Use fuzzy matching and combine with frecency
         let fuzzy_matches = matcher::fuzzy_filter_branches(&branches, pattern, ignore_case);
-        
+
         if fuzzy_matches.is_empty() {
             bail!("No branch found matching '{}'", pattern);
         }
@@ -189,7 +202,7 @@ fn find_and_checkout_branch(pattern: &str, ignore_case: bool, use_fuzzy: bool, i
     } else {
         // Use exact substring matching
         let matches = matcher::filter_branches(&branches, pattern, ignore_case);
-        
+
         if matches.is_empty() {
             bail!("No branch found matching '{}'", pattern);
         }
@@ -233,14 +246,14 @@ fn find_and_checkout_branch(pattern: &str, ignore_case: bool, use_fuzzy: bool, i
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::BranchRecord;
     use crate::matcher::ScoredMatch;
+    use crate::storage::BranchRecord;
 
     #[test]
     fn test_combine_fuzzy_and_frecency_scores_empty() {
         let fuzzy_matches: Vec<ScoredMatch> = vec![];
         let records: Vec<BranchRecord> = vec![];
-        
+
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
         assert_eq!(result.len(), 0);
     }
@@ -258,9 +271,9 @@ mod tests {
             },
         ];
         let records: Vec<BranchRecord> = vec![];
-        
+
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
-        
+
         assert_eq!(result.len(), 2);
         // Without frecency, should sort by fuzzy score only
         assert_eq!(result[0].0, "feature/auth");
@@ -286,18 +299,16 @@ mod tests {
                 score: 100,
             },
         ];
-        
-        let records = vec![
-            BranchRecord {
-                repo_path: "/test".to_string(),
-                branch_name: "feature/auth".to_string(),
-                switch_count: 10,
-                last_used: now - 60, // Recent: frecency score = 40.0
-            },
-        ];
-        
+
+        let records = vec![BranchRecord {
+            repo_path: "/test".to_string(),
+            branch_name: "feature/auth".to_string(),
+            switch_count: 10,
+            last_used: now - 60, // Recent: frecency score = 40.0
+        }];
+
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
-        
+
         assert_eq!(result.len(), 2);
         // feature/auth should rank higher due to frecency
         // auth: 80 + (40.0 * 10) = 480
@@ -325,7 +336,7 @@ mod tests {
                 score: 50,
             },
         ];
-        
+
         let records = vec![
             BranchRecord {
                 repo_path: "/test".to_string(),
@@ -340,9 +351,9 @@ mod tests {
                 last_used: now - 60, // Recent: frecency = 20.0
             },
         ];
-        
+
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
-        
+
         assert_eq!(result.len(), 2);
         // branch-a: 100 + (0.25 * 10) = 102.5
         // branch-b: 50 + (20.0 * 10) = 250.0
@@ -367,18 +378,16 @@ mod tests {
                 score: 60,
             },
         ];
-        
-        let records = vec![
-            BranchRecord {
-                repo_path: "/test".to_string(),
-                branch_name: "popular-branch".to_string(),
-                switch_count: 20,
-                last_used: now - 60, // Recent: frecency = 80.0
-            },
-        ];
-        
+
+        let records = vec![BranchRecord {
+            repo_path: "/test".to_string(),
+            branch_name: "popular-branch".to_string(),
+            switch_count: 20,
+            last_used: now - 60, // Recent: frecency = 80.0
+        }];
+
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
-        
+
         assert_eq!(result.len(), 2);
         // popular-branch: 60 + (80.0 * 10) = 860.0
         // new-branch: 100 + (0 * 10) = 100.0
@@ -388,16 +397,14 @@ mod tests {
 
     #[test]
     fn test_combine_fuzzy_and_frecency_scores_single_match() {
-        let fuzzy_matches = vec![
-            ScoredMatch {
-                branch: "only-match".to_string(),
-                score: 75,
-            },
-        ];
+        let fuzzy_matches = vec![ScoredMatch {
+            branch: "only-match".to_string(),
+            score: 75,
+        }];
         let records: Vec<BranchRecord> = vec![];
-        
+
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
-        
+
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, "only-match");
         assert_eq!(result[0].1, 75.0);
@@ -420,18 +427,16 @@ mod tests {
                 score: 100,
             },
         ];
-        
-        let records = vec![
-            BranchRecord {
-                repo_path: "/test".to_string(),
-                branch_name: "branch-b".to_string(),
-                switch_count: 5,
-                last_used: now - 60, // Recent
-            },
-        ];
-        
+
+        let records = vec![BranchRecord {
+            repo_path: "/test".to_string(),
+            branch_name: "branch-b".to_string(),
+            switch_count: 5,
+            last_used: now - 60, // Recent
+        }];
+
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
-        
+
         // branch-b should rank higher due to frecency
         assert_eq!(result[0].0, "branch-b");
         assert!(result[0].1 > result[1].1);
@@ -458,18 +463,16 @@ mod tests {
                 score: 80,
             },
         ];
-        
-        let records = vec![
-            BranchRecord {
-                repo_path: "/test".to_string(),
-                branch_name: "branch-b".to_string(),
-                switch_count: 3,
-                last_used: now - 60,
-            },
-        ];
-        
+
+        let records = vec![BranchRecord {
+            repo_path: "/test".to_string(),
+            branch_name: "branch-b".to_string(),
+            switch_count: 3,
+            last_used: now - 60,
+        }];
+
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
-        
+
         assert_eq!(result.len(), 3);
         // branch-b should be first due to frecency boost
         assert_eq!(result[0].0, "branch-b");
@@ -477,16 +480,14 @@ mod tests {
 
     #[test]
     fn test_combine_fuzzy_and_frecency_scores_zero_fuzzy_score() {
-        let fuzzy_matches = vec![
-            ScoredMatch {
-                branch: "branch-a".to_string(),
-                score: 0,
-            },
-        ];
+        let fuzzy_matches = vec![ScoredMatch {
+            branch: "branch-a".to_string(),
+            score: 0,
+        }];
         let records: Vec<BranchRecord> = vec![];
-        
+
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
-        
+
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].1, 0.0);
     }
@@ -508,18 +509,16 @@ mod tests {
                 score: 20,
             },
         ];
-        
-        let records = vec![
-            BranchRecord {
-                repo_path: "/test".to_string(),
-                branch_name: "low-fuzzy-high-frecency".to_string(),
-                switch_count: 50,
-                last_used: now - 60, // Recent, high frecency
-            },
-        ];
-        
+
+        let records = vec![BranchRecord {
+            repo_path: "/test".to_string(),
+            branch_name: "low-fuzzy-high-frecency".to_string(),
+            switch_count: 50,
+            last_used: now - 60, // Recent, high frecency
+        }];
+
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
-        
+
         // Low fuzzy but high frecency should win
         assert_eq!(result[0].0, "low-fuzzy-high-frecency");
         assert!(result[0].1 > result[1].1);
