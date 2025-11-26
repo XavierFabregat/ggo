@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Branch usage record from the database
 #[derive(Debug, Clone)]
 pub struct BranchRecord {
+    #[allow(dead_code)]
     pub repo_path: String,
     pub branch_name: String,
     pub switch_count: i64,
@@ -114,7 +115,7 @@ pub fn get_branch_records(repo_path: &str) -> Result<Vec<BranchRecord>> {
             })
         })
         .context("Failed to query branches")?
-        .filter_map(|r| r.ok())
+        .map_while(Result::ok)
         .collect();
 
     Ok(records)
@@ -142,7 +143,7 @@ pub fn get_all_records() -> Result<Vec<BranchRecord>> {
             })
         })
         .context("Failed to query branches")?
-        .filter_map(|r| r.ok())
+        .map_while(Result::ok)
         .collect();
 
     Ok(records)
@@ -292,7 +293,7 @@ mod tests {
                 })
             })
             .context("Failed to query branches")?
-            .filter_map(|r| r.ok())
+            .map_while(Result::ok)
             .collect();
 
         Ok(records)
@@ -317,7 +318,7 @@ mod tests {
                 })
             })
             .context("Failed to query branches")?
-            .filter_map(|r| r.ok())
+            .map_while(Result::ok)
             .collect();
 
         Ok(records)

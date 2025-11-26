@@ -16,7 +16,7 @@ pub fn get_branches() -> Result<Vec<String>> {
     let branches: Vec<String> = output
         .stdout
         .lines()
-        .filter_map(|line| line.ok())
+        .map_while(Result::ok)
         .map(|line| line.trim().trim_start_matches('*').trim().to_string())
         .collect();
 
@@ -133,7 +133,7 @@ mod tests {
         let branches: Vec<String> = output
             .stdout
             .lines()
-            .filter_map(|line| line.ok())
+            .map_while(Result::ok)
             .map(|line| line.trim().trim_start_matches('*').trim().to_string())
             .collect();
 

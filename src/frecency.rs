@@ -496,7 +496,7 @@ mod tests {
             .as_secs() as i64;
 
         // Exact boundaries
-        assert_eq!(format_relative_time(now - 0), "just now");
+        assert_eq!(format_relative_time(now), "just now");
         assert_eq!(format_relative_time(now - 3600), "1h ago");
         assert_eq!(format_relative_time(now - 86400), "1d ago");
         assert_eq!(format_relative_time(now - 604800), "1w ago");
