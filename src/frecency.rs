@@ -2,9 +2,9 @@ use crate::storage::BranchRecord;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Calculate the frecency score for a branch record.
-/// 
+///
 /// Frecency = frequency × recency_weight
-/// 
+///
 /// The recency weight decays over time:
 /// - Used in last hour: weight = 4.0
 /// - Used in last day: weight = 2.0
@@ -18,7 +18,7 @@ pub fn calculate_score(record: &BranchRecord) -> f64 {
         .as_secs() as i64;
 
     let age_seconds = now - record.last_used;
-    
+
     let recency_weight = if age_seconds < 3600 {
         // Last hour
         4.0
@@ -61,7 +61,11 @@ pub fn rank_branches(records: &[BranchRecord]) -> Vec<ScoredBranch> {
         .collect();
 
     // Sort by score descending
-    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    scored.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     scored
 }
@@ -333,10 +337,10 @@ mod tests {
             "feature".to_string(),
         ];
         let records: Vec<BranchRecord> = vec![];
-        
+
         let sorted = sort_branches_by_frecency(&branches, &records);
         assert_eq!(sorted.len(), 3);
-        
+
         // All should have score 0.0
         for (_, score) in &sorted {
             assert_eq!(*score, 0.0);
@@ -355,7 +359,7 @@ mod tests {
             "develop".to_string(),
             "feature".to_string(),
         ];
-        
+
         let records = vec![
             BranchRecord {
                 repo_path: "/test".to_string(),
@@ -370,7 +374,7 @@ mod tests {
                 last_used: now - 43200, // score = 10.0
             },
         ];
-        
+
         let sorted = sort_branches_by_frecency(&branches, &records);
         assert_eq!(sorted.len(), 3);
         assert_eq!(sorted[0].0, "develop");
@@ -393,16 +397,14 @@ mod tests {
             "branch-b".to_string(),
             "branch-c".to_string(),
         ];
-        
-        let records = vec![
-            BranchRecord {
-                repo_path: "/test".to_string(),
-                branch_name: "branch-b".to_string(),
-                switch_count: 3,
-                last_used: now - 60,
-            },
-        ];
-        
+
+        let records = vec![BranchRecord {
+            repo_path: "/test".to_string(),
+            branch_name: "branch-b".to_string(),
+            switch_count: 3,
+            last_used: now - 60,
+        }];
+
         let sorted = sort_branches_by_frecency(&branches, &records);
         assert_eq!(sorted[0].0, "branch-b");
         assert!(sorted[0].1 > 0.0);
@@ -501,4 +503,3 @@ mod tests {
         assert_eq!(format_relative_time(now - 2592000), "1mo ago");
     }
 }
-

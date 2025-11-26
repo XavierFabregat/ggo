@@ -65,11 +65,11 @@ pub fn get_current_branch() -> Result<String> {
     }
 
     let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    
+
     if branch.is_empty() {
         bail!("Not on a branch (detached HEAD)");
     }
-    
+
     Ok(branch)
 }
 
@@ -83,38 +83,38 @@ mod tests {
     fn setup_test_repo() -> std::io::Result<tempfile::TempDir> {
         let temp_dir = tempfile::tempdir()?;
         let repo_path = temp_dir.path();
-        
+
         // Initialize git repo
         Command::new("git")
             .args(["init"])
             .current_dir(repo_path)
             .output()?;
-        
+
         // Configure git for tests
         Command::new("git")
             .args(["config", "user.email", "test@example.com"])
             .current_dir(repo_path)
             .output()?;
-        
+
         Command::new("git")
             .args(["config", "user.name", "Test User"])
             .current_dir(repo_path)
             .output()?;
-        
+
         // Create initial commit
         let test_file = repo_path.join("test.txt");
         fs::write(&test_file, "test content")?;
-        
+
         Command::new("git")
             .args(["add", "."])
             .current_dir(repo_path)
             .output()?;
-        
+
         Command::new("git")
             .args(["commit", "-m", "Initial commit"])
             .current_dir(repo_path)
             .output()?;
-        
+
         Ok(temp_dir)
     }
 
@@ -143,9 +143,9 @@ mod tests {
     #[test]
     fn test_get_branches_empty_repo() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
-        
+
         let result = get_branches_in_dir(temp_dir.path());
-        
+
         assert!(result.is_ok());
         let branches = result.unwrap();
         // Should have at least the default branch (main or master)
@@ -157,22 +157,22 @@ mod tests {
     fn test_get_branches_multiple() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
         let repo_path = temp_dir.path();
-        
+
         // Create additional branches
         Command::new("git")
             .args(["branch", "feature-a"])
             .current_dir(repo_path)
             .output()
             .unwrap();
-        
+
         Command::new("git")
             .args(["branch", "feature-b"])
             .current_dir(repo_path)
             .output()
             .unwrap();
-        
+
         let result = get_branches_in_dir(repo_path);
-        
+
         assert!(result.is_ok());
         let branches = result.unwrap();
         assert!(branches.len() >= 3);
@@ -184,16 +184,16 @@ mod tests {
     fn test_get_branches_strips_asterisk() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
         let repo_path = temp_dir.path();
-        
+
         // Create and checkout a new branch
         Command::new("git")
             .args(["checkout", "-b", "test-branch"])
             .current_dir(repo_path)
             .output()
             .unwrap();
-        
+
         let result = get_branches_in_dir(repo_path);
-        
+
         assert!(result.is_ok());
         let branches = result.unwrap();
         // Ensure no branch has asterisk
@@ -207,9 +207,9 @@ mod tests {
     #[test]
     fn test_get_branches_not_git_repo() {
         let temp_dir = tempfile::tempdir().unwrap();
-        
+
         let result = get_branches_in_dir(temp_dir.path());
-        
+
         assert!(result.is_err());
     }
 
@@ -233,25 +233,25 @@ mod tests {
     fn test_checkout_existing_branch() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
         let repo_path = temp_dir.path();
-        
+
         // Create a new branch
         Command::new("git")
             .args(["branch", "test-checkout"])
             .current_dir(repo_path)
             .output()
             .unwrap();
-        
+
         let result = checkout_in_dir(repo_path, "test-checkout");
-        
+
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_checkout_nonexistent_branch() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
-        
+
         let result = checkout_in_dir(temp_dir.path(), "nonexistent-branch");
-        
+
         assert!(result.is_err());
     }
 
@@ -284,11 +284,11 @@ mod tests {
         }
 
         let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        
+
         if branch.is_empty() {
             bail!("Not on a branch (detached HEAD)");
         }
-        
+
         Ok(branch)
     }
 
@@ -296,13 +296,13 @@ mod tests {
     fn test_get_repo_root() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
         let repo_path = temp_dir.path();
-        
+
         // Create a subdirectory
         let subdir = repo_path.join("subdir");
         fs::create_dir(&subdir).unwrap();
-        
+
         let result = get_repo_root_in_dir(&subdir);
-        
+
         assert!(result.is_ok());
         let root = result.unwrap();
         // Should return the repo root, not the subdirectory
@@ -312,9 +312,9 @@ mod tests {
     #[test]
     fn test_get_repo_root_not_git_repo() {
         let temp_dir = tempfile::tempdir().unwrap();
-        
+
         let result = get_repo_root_in_dir(temp_dir.path());
-        
+
         assert!(result.is_err());
     }
 
@@ -322,16 +322,16 @@ mod tests {
     fn test_get_current_branch() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
         let repo_path = temp_dir.path();
-        
+
         // Create and checkout a new branch
         Command::new("git")
             .args(["checkout", "-b", "current-test"])
             .current_dir(repo_path)
             .output()
             .unwrap();
-        
+
         let result = get_current_branch_in_dir(repo_path);
-        
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "current-test");
     }
@@ -339,9 +339,9 @@ mod tests {
     #[test]
     fn test_get_current_branch_not_git_repo() {
         let temp_dir = tempfile::tempdir().unwrap();
-        
+
         let result = get_current_branch_in_dir(temp_dir.path());
-        
+
         assert!(result.is_err());
     }
 
@@ -349,27 +349,26 @@ mod tests {
     fn test_get_current_branch_detached_head() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
         let repo_path = temp_dir.path();
-        
+
         // Get the commit hash
         let output = Command::new("git")
             .args(["rev-parse", "HEAD"])
             .current_dir(repo_path)
             .output()
             .unwrap();
-        
+
         let commit_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        
+
         // Checkout the commit directly (detached HEAD)
         Command::new("git")
             .args(["checkout", &commit_hash])
             .current_dir(repo_path)
             .output()
             .unwrap();
-        
+
         let result = get_current_branch_in_dir(repo_path);
-        
+
         // Should fail because we're in detached HEAD state
         assert!(result.is_err());
     }
 }
-

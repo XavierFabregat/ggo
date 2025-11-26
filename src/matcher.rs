@@ -48,7 +48,7 @@ pub fn fuzzy_filter_branches(
     }
 
     let matcher = SkimMatcherV2::default();
-    
+
     let mut scored: Vec<ScoredMatch> = branches
         .iter()
         .filter_map(|branch| {
@@ -57,19 +57,19 @@ pub fn fuzzy_filter_branches(
             } else {
                 branch.clone()
             };
-            
+
             let search_pattern = if ignore_case {
                 pattern.to_lowercase()
             } else {
                 pattern.to_string()
             };
-            
-            matcher.fuzzy_match(&search_text, &search_pattern).map(|score| {
-                ScoredMatch {
+
+            matcher
+                .fuzzy_match(&search_text, &search_pattern)
+                .map(|score| ScoredMatch {
                     branch: branch.clone(),
                     score,
-                }
-            })
+                })
         })
         .collect();
 
@@ -156,10 +156,7 @@ mod tests {
 
     #[test]
     fn test_filter_branches_no_matches() {
-        let branches = vec![
-            "main".to_string(),
-            "develop".to_string(),
-        ];
+        let branches = vec!["main".to_string(), "develop".to_string()];
 
         let matches = filter_branches(&branches, "feature", false);
         assert_eq!(matches.len(), 0);
@@ -219,7 +216,7 @@ mod tests {
         ];
 
         let matches = fuzzy_filter_branches(&branches, "exo", false);
-        
+
         // Should match "expo-feature-branch" with fuzzy matching
         assert!(!matches.is_empty());
         assert_eq!(matches[0].branch, "expo-feature-branch");
@@ -235,7 +232,7 @@ mod tests {
         ];
 
         let matches = fuzzy_filter_branches(&branches, "feat", false);
-        
+
         // Should have matches and they should be ordered
         assert!(!matches.is_empty());
         // Best matches should contain "feat"
@@ -244,10 +241,7 @@ mod tests {
 
     #[test]
     fn test_fuzzy_filter_empty_pattern() {
-        let branches = vec![
-            "main".to_string(),
-            "feature".to_string(),
-        ];
+        let branches = vec!["main".to_string(), "feature".to_string()];
 
         let matches = fuzzy_filter_branches(&branches, "", false);
         assert_eq!(matches.len(), 2);
@@ -264,10 +258,7 @@ mod tests {
 
     #[test]
     fn test_fuzzy_filter_no_matches() {
-        let branches = vec![
-            "main".to_string(),
-            "develop".to_string(),
-        ];
+        let branches = vec!["main".to_string(), "develop".to_string()];
 
         let matches = fuzzy_filter_branches(&branches, "xyz", false);
         assert_eq!(matches.len(), 0);
@@ -288,20 +279,19 @@ mod tests {
 
     #[test]
     fn test_fuzzy_filter_case_sensitive() {
-        let branches = vec![
-            "Feature/Auth".to_string(),
-            "feature/auth".to_string(),
-        ];
+        let branches = vec!["Feature/Auth".to_string(), "feature/auth".to_string()];
 
         let matches_lower = fuzzy_filter_branches(&branches, "auth", false);
         assert!(!matches_lower.is_empty());
-        
+
         // Both branches should match regardless of case in pattern
         let matches_upper = fuzzy_filter_branches(&branches, "auth", true);
         assert!(!matches_upper.is_empty());
-        
+
         // Should find branches with auth
-        assert!(matches_lower.iter().any(|m| m.branch.contains("auth") || m.branch.contains("Auth")));
+        assert!(matches_lower
+            .iter()
+            .any(|m| m.branch.contains("auth") || m.branch.contains("Auth")));
     }
 
     #[test]
@@ -328,7 +318,7 @@ mod tests {
 
         let matches = fuzzy_filter_branches(&branches, "test", false);
         assert!(!matches.is_empty());
-        
+
         // Should have matches ordered by score
         assert!(matches[0].score >= matches[1].score);
         assert!(matches[1].score >= matches[2].score);
@@ -356,4 +346,3 @@ mod tests {
         assert!(debug_str.contains("100"));
     }
 }
-
