@@ -27,7 +27,7 @@ use clap::{Parser, Subcommand};
 ///     by default for more forgiving pattern matching.
 #[derive(Parser)]
 #[command(name = "ggo")]
-#[command(version)]
+#[command(disable_version_flag = true)]
 #[command(about = "Smart Git Navigation Tool", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
@@ -55,6 +55,10 @@ pub struct Cli {
     /// Show usage statistics
     #[arg(long)]
     pub stats: bool,
+
+    /// Print version
+    #[arg(short = 'v', short_alias = 'V', long)]
+    pub version: bool,
 }
 
 #[derive(Subcommand, Debug, PartialEq)]

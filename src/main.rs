@@ -14,6 +14,12 @@ use cli::{Cli, Commands};
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Handle version flag
+    if cli.version {
+        println!("ggo {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     // Handle subcommands first
     if let Some(command) = cli.command {
         match command {
