@@ -578,7 +578,7 @@ mod tests {
         // Test edge case: second score is 0, should always auto-select
         let second_score = 0.0;
 
-        let should_auto_select = if second_score == 0.0 { true } else { false };
+        let should_auto_select = second_score == 0.0;
         assert!(should_auto_select);
     }
 
