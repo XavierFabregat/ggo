@@ -37,7 +37,7 @@ fn main() -> Result<()> {
     let pattern = cli
         .pattern
         .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("Pattern argument is required"))?;
+        .ok_or_else(|| anyhow::anyhow!("Pattern argument is required\n\nUsage: ggo <pattern>\nTry 'ggo --help' for more information"))?;
 
     // Handle the special '-' pattern to go back to previous branch
     if pattern == "-" {
@@ -96,7 +96,10 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
         let fuzzy_matches = matcher::fuzzy_filter_branches(&branches, pattern, ignore_case);
 
         if fuzzy_matches.is_empty() {
-            bail!("No branches found matching '{}'", pattern);
+            bail!(
+                "No branches found matching '{}'\n\nTry:\n  • Using a different pattern\n  • Running 'git branch' to see all branches\n  • Using 'ggo --list \"\"' to list all branches",
+                pattern
+            );
         }
 
         combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records)
@@ -105,7 +108,10 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
         let matches = matcher::filter_branches(&branches, pattern, ignore_case);
 
         if matches.is_empty() {
-            bail!("No branches found matching '{}'", pattern);
+            bail!(
+                "No branches found matching '{}'\n\nTry:\n  • Using a different pattern\n  • Enabling fuzzy matching (remove --no-fuzzy flag)\n  • Running 'git branch' to see all branches",
+                pattern
+            );
         }
 
         let match_strings: Vec<String> = matches.iter().map(|s| s.to_string()).collect();
@@ -152,7 +158,7 @@ fn checkout_previous_branch() -> Result<()> {
     let repo_path = git::get_repo_root()?;
 
     let previous_branch = storage::get_previous_branch(&repo_path)?
-        .ok_or_else(|| anyhow::anyhow!("No previous branch found"))?;
+        .ok_or_else(|| anyhow::anyhow!("No previous branch found\n\nYou haven't switched branches yet in this repository"))?;
 
     // Save current branch before switching
     if let Ok(current_branch) = git::get_current_branch() {
@@ -211,7 +217,7 @@ fn handle_alias_command(
         // Validate alias name
         if !is_valid_alias(alias) {
             bail!(
-                "Invalid alias name '{}'. Alias must contain only alphanumeric characters, dash, or underscore, and cannot start with '-'",
+                "Invalid alias name '{}'\n\nAlias requirements:\n  • Only alphanumeric characters, dash (-), or underscore (_)\n  • Cannot start with '-'\n  • Cannot be 'stats' or 'alias' (reserved words)",
                 alias
             );
         }
@@ -219,7 +225,10 @@ fn handle_alias_command(
         // Validate that branch exists
         let branches = git::get_branches()?;
         if !branches.contains(&branch_name.to_string()) {
-            bail!("Branch '{}' does not exist in this repository", branch_name);
+            bail!(
+                "Branch '{}' does not exist in this repository\n\nRun 'git branch' to see available branches",
+                branch_name
+            );
         }
 
         // Create/update the alias
