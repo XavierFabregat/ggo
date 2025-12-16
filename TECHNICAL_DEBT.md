@@ -9,17 +9,16 @@
 **Completed:**
 - ✅ **All 4 Critical Issues (C1-C4)**
 - ✅ **All 3 High Priority (H1-H3)**
-- ✅ **2 of 5 Medium Priority (M2, M3)**
+- ✅ **All 5 Medium Priority (M1-M5)**
 - ✅ **All 7 Quick Wins (QW1-QW7)**
 - ✅ LT2: Branch Aliases (v0.2.0 feature)
 
-**Total:** 17 items completed
+**Total:** 20 items completed
 
 **In Progress:**
 - None
 
 **Remaining:**
-- 3 Medium priority (M1, M4, M5)
 - 2 Low priority (L2, L3) - L1 completed
 - 9 Long-term improvements (LT1, LT3-LT10)
 
@@ -867,7 +866,11 @@ fn find_and_checkout_branch(pattern: &str, ...) -> Result<String> {
 
 ## Medium Priority
 
-### M1: Frecency Algorithm Improvements
+### ✅ M1: Frecency Algorithm Improvements (COMPLETED)
+
+**Status:** ✅ Done (Commit: 6ab7aa6)
+**Completed:** 2025-12-16
+**Solution:** Exponential decay with 1-week half-life
 
 **Location:** `frecency.rs:14-40`
 
@@ -1200,7 +1203,10 @@ pub fn calculate_score(record: &BranchRecord) -> f64 {
 
 ---
 
-### M4: Unbounded Database Growth
+### ✅ M4: Unbounded Database Growth (COMPLETED)
+
+**Status:** ✅ Done (Commit: fde62d7)
+**Completed:** 2025-12-16
 
 **Location:** `storage.rs`
 
@@ -1313,7 +1319,10 @@ fn maybe_run_maintenance() -> Result<()> {
 
 ---
 
-### M5: No Logging Framework
+### ✅ M5: No Logging Framework (COMPLETED)
+
+**Status:** ✅ Done (Commit: c111177)
+**Completed:** 2025-12-16
 
 **Location:** Throughout codebase
 
