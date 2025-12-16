@@ -1,7 +1,9 @@
 use std::env;
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+
+mod common;
+use common::setup_test_repo;
 
 // Helper to get the path to the built ggo binary
 fn get_ggo_binary() -> PathBuf {
@@ -24,45 +26,6 @@ fn get_ggo_binary() -> PathBuf {
     path.push("debug");
     path.push("ggo");
     path
-}
-
-// Helper to create a temporary git repo for testing
-fn setup_test_repo() -> std::io::Result<tempfile::TempDir> {
-    let temp_dir = tempfile::tempdir()?;
-    let repo_path = temp_dir.path();
-
-    // Initialize git repo
-    Command::new("git")
-        .args(["init"])
-        .current_dir(repo_path)
-        .output()?;
-
-    // Configure git for tests
-    Command::new("git")
-        .args(["config", "user.email", "test@example.com"])
-        .current_dir(repo_path)
-        .output()?;
-
-    Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(repo_path)
-        .output()?;
-
-    // Create initial commit
-    let test_file = repo_path.join("test.txt");
-    fs::write(&test_file, "test content")?;
-
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(repo_path)
-        .output()?;
-
-    Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(repo_path)
-        .output()?;
-
-    Ok(temp_dir)
 }
 
 #[test]
