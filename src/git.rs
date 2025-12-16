@@ -5,8 +5,7 @@ use crate::validation;
 
 /// Get all local git branches in the current repository
 pub fn get_branches() -> Result<Vec<String>> {
-    let repo = Repository::open_from_env()
-        .context("Not a git repository")?;
+    let repo = Repository::open_from_env().context("Not a git repository")?;
 
     let mut branches = Vec::new();
 
@@ -23,15 +22,14 @@ pub fn get_branches() -> Result<Vec<String>> {
 /// Checkout the specified branch
 pub fn checkout(branch: &str) -> Result<()> {
     // Validate branch name before attempting checkout
-    validation::validate_branch_name(branch)
-        .context("Cannot checkout invalid branch name")?;
+    validation::validate_branch_name(branch).context("Cannot checkout invalid branch name")?;
 
-    let repo = Repository::open_from_env()
-        .context("Not a git repository")?;
+    let repo = Repository::open_from_env().context("Not a git repository")?;
 
     // Find the branch reference
     let refname = format!("refs/heads/{}", branch);
-    let obj = repo.revparse_single(&refname)
+    let obj = repo
+        .revparse_single(&refname)
         .context(format!("Branch '{}' not found", branch))?;
 
     // Checkout the branch
@@ -47,10 +45,10 @@ pub fn checkout(branch: &str) -> Result<()> {
 
 /// Get the root path of the current git repository
 pub fn get_repo_root() -> Result<String> {
-    let repo = Repository::open_from_env()
-        .context("Not a git repository")?;
+    let repo = Repository::open_from_env().context("Not a git repository")?;
 
-    let workdir = repo.workdir()
+    let workdir = repo
+        .workdir()
         .ok_or_else(|| anyhow::anyhow!("Repository has no working directory (bare repository?)"))?;
 
     let path = workdir
@@ -59,19 +57,16 @@ pub fn get_repo_root() -> Result<String> {
         .to_string();
 
     // Validate the returned repo path
-    validation::validate_repo_path(&path)
-        .context("Git returned invalid repository path")?;
+    validation::validate_repo_path(&path).context("Git returned invalid repository path")?;
 
     Ok(path)
 }
 
 /// Get the name of the current branch
 pub fn get_current_branch() -> Result<String> {
-    let repo = Repository::open_from_env()
-        .context("Not a git repository")?;
+    let repo = Repository::open_from_env().context("Not a git repository")?;
 
-    let head = repo.head()
-        .context("Could not get HEAD reference")?;
+    let head = repo.head().context("Could not get HEAD reference")?;
 
     if !head.is_branch() {
         bail!("Not on a branch (detached HEAD)");
@@ -121,23 +116,15 @@ mod tests {
         let tree = repo.find_tree(tree_id).unwrap();
         let sig = repo.signature().unwrap();
 
-        repo.commit(
-            Some("HEAD"),
-            &sig,
-            &sig,
-            "Initial commit",
-            &tree,
-            &[],
-        )
-        .unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
+            .unwrap();
 
         Ok(temp_dir)
     }
 
     // Helper to get branches from a specific repo path
     fn get_branches_from_path(path: &Path) -> Result<Vec<String>> {
-        let repo = Repository::open(path)
-            .context("Not a git repository")?;
+        let repo = Repository::open(path).context("Not a git repository")?;
 
         let mut branches = Vec::new();
 
@@ -207,14 +194,13 @@ mod tests {
 
     // Helper to checkout in a specific repo
     fn checkout_in_repo(path: &Path, branch: &str) -> Result<()> {
-        validation::validate_branch_name(branch)
-            .context("Cannot checkout invalid branch name")?;
+        validation::validate_branch_name(branch).context("Cannot checkout invalid branch name")?;
 
-        let repo = Repository::open(path)
-            .context("Not a git repository")?;
+        let repo = Repository::open(path).context("Not a git repository")?;
 
         let refname = format!("refs/heads/{}", branch);
-        let obj = repo.revparse_single(&refname)
+        let obj = repo
+            .revparse_single(&refname)
             .context(format!("Branch '{}' not found", branch))?;
 
         repo.checkout_tree(&obj, None)
@@ -256,11 +242,11 @@ mod tests {
 
     // Helper to discover repo root from a subdirectory
     fn get_repo_root_from_path(path: &Path) -> Result<String> {
-        let repo = Repository::discover(path)
-            .context("Not a git repository")?;
+        let repo = Repository::discover(path).context("Not a git repository")?;
 
-        let workdir = repo.workdir()
-            .ok_or_else(|| anyhow::anyhow!("Repository has no working directory (bare repository?)"))?;
+        let workdir = repo.workdir().ok_or_else(|| {
+            anyhow::anyhow!("Repository has no working directory (bare repository?)")
+        })?;
 
         let root_path = workdir
             .to_str()
@@ -304,11 +290,9 @@ mod tests {
 
     // Helper to get current branch from a specific repo
     fn get_current_branch_from_repo(path: &Path) -> Result<String> {
-        let repo = Repository::open(path)
-            .context("Not a git repository")?;
+        let repo = Repository::open(path).context("Not a git repository")?;
 
-        let head = repo.head()
-            .context("Could not get HEAD reference")?;
+        let head = repo.head().context("Could not get HEAD reference")?;
 
         if !head.is_branch() {
             bail!("Not on a branch (detached HEAD)");

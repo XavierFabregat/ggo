@@ -143,10 +143,11 @@ pub fn validate_alias_name(alias: &str) -> Result<()> {
     }
 
     // Only allow alphanumeric, dash, and underscore
-    if !alias.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-        bail!(
-            "Alias name must contain only alphanumeric characters, dash (-), or underscore (_)"
-        );
+    if !alias
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        bail!("Alias name must contain only alphanumeric characters, dash (-), or underscore (_)");
     }
 
     Ok(())
