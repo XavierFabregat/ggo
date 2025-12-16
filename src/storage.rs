@@ -1341,7 +1341,10 @@ mod tests {
 
         // Try to get alias "m" from repo2 - should return None
         let result = do_get_alias(&conn, &repo_path2, "m").unwrap();
-        assert_eq!(result, None, "Alias from repo1 should not be accessible in repo2");
+        assert_eq!(
+            result, None,
+            "Alias from repo1 should not be accessible in repo2"
+        );
 
         // Verify it still works in repo1
         let result = do_get_alias(&conn, &repo_path1, "m").unwrap();
