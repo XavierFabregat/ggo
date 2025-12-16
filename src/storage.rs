@@ -28,7 +28,17 @@ pub struct Alias {
 }
 
 /// Get the path to the ggo data directory (~/.config/ggo on Unix)
+/// Can be overridden with GGO_DATA_DIR environment variable (for testing)
 fn get_data_dir() -> Result<PathBuf> {
+    // Check for test/override directory first
+    if let Ok(test_dir) = std::env::var("GGO_DATA_DIR") {
+        let path = PathBuf::from(test_dir);
+        std::fs::create_dir_all(&path)
+            .context("Failed to create GGO_DATA_DIR directory")?;
+        return Ok(path);
+    }
+
+    // Normal production path
     let config_dir = dirs::config_local_dir()
         .ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?;
 
@@ -1697,6 +1707,61 @@ mod tests {
 
         // Count should be the same (no duplicate migrations)
         assert_eq!(version_count, new_version_count);
+    }
+
+    #[test]
+    fn test_env_var_overrides_data_dir() {
+        // Create a temporary directory
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_path = temp_dir.path().join("test-ggo-data");
+
+        // Set the environment variable
+        std::env::set_var("GGO_DATA_DIR", &test_path);
+
+        // Get the data dir
+        let result = get_data_dir();
+
+        // Clean up env var
+        std::env::remove_var("GGO_DATA_DIR");
+
+        assert!(result.is_ok());
+        let data_dir = result.unwrap();
+
+        // Should use the env var path, not the default
+        assert_eq!(data_dir, test_path);
+        assert!(test_path.exists());
+    }
+
+    #[test]
+    fn test_env_var_isolates_database() {
+        // Create two different temp directories
+        let temp_dir1 = tempfile::tempdir().unwrap();
+        let temp_dir2 = tempfile::tempdir().unwrap();
+
+        let test_path1 = temp_dir1.path().join("db1");
+        let test_path2 = temp_dir2.path().join("db2");
+
+        // Use first database
+        std::env::set_var("GGO_DATA_DIR", &test_path1);
+        let conn1 = open_db().unwrap();
+        do_record_checkout(&conn1, "/test1", "branch1").unwrap();
+
+        // Switch to second database
+        std::env::set_var("GGO_DATA_DIR", &test_path2);
+        let conn2 = open_db().unwrap();
+        do_record_checkout(&conn2, "/test2", "branch2").unwrap();
+
+        // Verify isolation
+        let records1 = do_get_branch_records(&conn1, "/test1").unwrap();
+        let records2 = do_get_branch_records(&conn2, "/test2").unwrap();
+
+        assert_eq!(records1.len(), 1);
+        assert_eq!(records2.len(), 1);
+        assert_eq!(records1[0].branch_name, "branch1");
+        assert_eq!(records2[0].branch_name, "branch2");
+
+        // Clean up
+        std::env::remove_var("GGO_DATA_DIR");
     }
 
     #[test]
