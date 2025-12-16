@@ -173,6 +173,17 @@ fn checkout_previous_branch() -> Result<()> {
         )
     })?;
 
+    // Re-verify branch exists before checkout (prevent race condition)
+    let current_branches = git::get_branches()
+        .context("Failed to verify branch list before checkout")?;
+
+    if !current_branches.contains(&previous_branch) {
+        bail!(
+            "Branch '{}' no longer exists\n\nYour previous branch may have been deleted.\nRun 'git branch' to see available branches.",
+            previous_branch
+        );
+    }
+
     // Save current branch before switching
     if let Ok(current_branch) = git::get_current_branch() {
         if let Err(e) = storage::save_previous_branch(&repo_path, &current_branch) {
@@ -345,6 +356,18 @@ fn find_and_checkout_branch(
         // This protects against stale aliases pointing to deleted branches
         if branches.contains(&branch_name) {
             println!("Using alias '{}' → '{}'", pattern, branch_name);
+
+            // Re-verify branch exists before checkout (prevent race condition)
+            let current_branches = git::get_branches()
+                .context("Failed to verify branch list before checkout")?;
+
+            if !current_branches.contains(&branch_name) {
+                bail!(
+                    "Branch '{}' no longer exists\n\nIt may have been deleted after alias lookup.\nRun 'git branch' to see available branches.",
+                    branch_name
+                );
+            }
+
             // Checkout the aliased branch directly
             let current_branch = git::get_current_branch().ok();
             if let Some(ref current) = current_branch {
@@ -423,12 +446,24 @@ fn find_and_checkout_branch(
         }
     };
 
+    // Re-verify branch exists before checkout (prevent race condition)
+    let current_branches = git::get_branches()
+        .context("Failed to verify branch list before checkout")?;
+
+    if !current_branches.contains(&branch_to_checkout) {
+        bail!(
+            "Branch '{}' no longer exists\n\nIt may have been deleted after the initial search.\nRun 'git branch' to see available branches.",
+            branch_to_checkout
+        );
+    }
+
     // Save current branch as previous before switching
     if let Ok(current_branch) = git::get_current_branch() {
         // Only save if we're switching to a different branch
         if current_branch != branch_to_checkout {
             if let Err(e) = storage::save_previous_branch(&repo_path, &current_branch) {
-                eprintln!("Warning: Failed to save current branch: {}", e);
+                eprintln!("⚠️  Warning: Could not save previous branch: {}", e);
+                eprintln!("   The 'ggo -' command may not work correctly.");
             }
         }
     }
