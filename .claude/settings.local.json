@@ -5,7 +5,9 @@
       "Bash(./target/debug/ggo:*)",
       "Bash(git checkout:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(cargo test:*)",
+      "Bash(ggo --version:*)"
     ],
     "deny": [],
     "ask": []
