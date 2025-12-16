@@ -13,7 +13,8 @@
       "Bash(cargo install:*)",
       "Bash(ggo alias:*)",
       "Bash(ggo --list:*)",
-      "Bash(ggo fa:*)"
+      "Bash(ggo fa:*)",
+      "Bash(cargo fmt:*)"
     ],
     "deny": [],
     "ask": []
