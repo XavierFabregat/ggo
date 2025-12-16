@@ -304,8 +304,11 @@ fn find_and_checkout_branch(
     let records = storage::get_branch_records(&repo_path).unwrap_or_default();
 
     // Check if pattern is an exact alias match (highest priority)
+    // Note: get_alias() only returns aliases for the current repo (scoped by repo_path)
+    // This ensures we never try to use an alias from a different repository
     if let Ok(Some(branch_name)) = storage::get_alias(&repo_path, pattern) {
-        // Verify the aliased branch still exists
+        // Verify the aliased branch exists in the current repository
+        // This protects against stale aliases pointing to deleted branches
         if branches.contains(&branch_name) {
             println!("Using alias '{}' → '{}'", pattern, branch_name);
             // Checkout the aliased branch directly
