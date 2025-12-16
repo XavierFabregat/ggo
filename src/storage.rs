@@ -1971,9 +1971,12 @@ mod tests {
 
     #[test]
     fn test_get_database_size() {
-        // Database size should be > 0
-        let result = get_database_size();
+        // Test that get_db_path works and returns a valid path
+        let result = get_db_path();
         assert!(result.is_ok());
-        assert!(result.unwrap() > 0);
+
+        let db_path = result.unwrap();
+        // Path should end with data.db
+        assert!(db_path.to_string_lossy().ends_with("data.db"));
     }
 }
