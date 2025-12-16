@@ -9,7 +9,7 @@ mod validation;
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use cli::{Cli, Commands};
 use constants::scoring::{AUTO_SELECT_THRESHOLD, FRECENCY_MULTIPLIER};
