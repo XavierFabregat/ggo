@@ -247,17 +247,17 @@ cargo clippy --all-targets --all-features -- -D warnings  # No clippy warnings a
 
 If any of these fail, fix the issues before committing.
 
-**Automated Pre-Commit Hooks:**
-To automatically run these checks before every commit, you can use `cargo-husky`:
-```bash
-# Add to Cargo.toml [dev-dependencies]
-cargo-husky = "1"
+**Automated Pre-Push Hooks:**
+This project uses `cargo-husky` to automatically run checks before pushing. The hook is **already configured** and will be installed automatically when you run `cargo test` for the first time.
 
-# Or set up manually with git hooks
-# Create .git/hooks/pre-commit and make it executable
-```
+**How it works:**
+- Custom pre-push hook is defined in `.cargo-husky/hooks/pre-push`
+- When you run `cargo test`, cargo-husky copies it to `.git/hooks/pre-push`
+- The hook runs automatically before every `git push`
+- If any check fails, the push is blocked
 
-See https://github.com/rhysd/cargo-husky for setup instructions.
+**For new developers:**
+Just run `cargo test` once to install the hook - that's it!
 
 ## Notes for AI Assistants
 
