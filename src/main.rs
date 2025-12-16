@@ -212,13 +212,33 @@ fn find_and_checkout_branch(
     };
 
     // Determine which branch to checkout
-    let branch_to_checkout = if interactive || ranked.len() > 1 {
-        // Use interactive mode if explicitly requested OR if there are multiple matches
+    let branch_to_checkout = if interactive {
+        // Always use interactive mode if explicitly requested
         let branch_list: Vec<String> = ranked.iter().map(|(b, _)| b.clone()).collect();
         interactive::select_branch(&branch_list, &records)?
-    } else {
-        // Single match or non-interactive: use best match
+    } else if ranked.len() == 1 {
+        // Single match: use it
         ranked[0].0.clone()
+    } else {
+        // Multiple matches: check if there's a clear winner
+        let top_score = ranked[0].1;
+        let second_score = ranked[1].1;
+
+        // If top score is 2x or more than second, auto-select
+        // Handle edge case where second_score is 0
+        let should_auto_select = if second_score == 0.0 {
+            true
+        } else {
+            top_score / second_score >= 2.0
+        };
+
+        if should_auto_select {
+            ranked[0].0.clone()
+        } else {
+            // Scores are close, show interactive menu
+            let branch_list: Vec<String> = ranked.iter().map(|(b, _)| b.clone()).collect();
+            interactive::select_branch(&branch_list, &records)?
+        }
     };
 
     // Save current branch as previous before switching
@@ -485,7 +505,6 @@ mod tests {
             score: 0,
         }];
         let records: Vec<BranchRecord> = vec![];
-
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
 
         assert_eq!(result.len(), 1);
@@ -522,5 +541,64 @@ mod tests {
         // Low fuzzy but high frecency should win
         assert_eq!(result[0].0, "low-fuzzy-high-frecency");
         assert!(result[0].1 > result[1].1);
+    }
+
+    #[test]
+    fn test_should_auto_select_clear_winner() {
+        // Test that 2x score ratio triggers auto-select
+        let top_score = 400.0;
+        let second_score = 150.0;
+
+        let should_auto_select = top_score / second_score >= 2.0;
+        assert!(should_auto_select);
+    }
+
+    #[test]
+    fn test_should_not_auto_select_close_scores() {
+        // Test that close scores (< 2x) trigger interactive menu
+        let top_score = 250.0;
+        let second_score = 200.0;
+
+        let should_auto_select = top_score / second_score >= 2.0;
+        assert!(!should_auto_select);
+    }
+
+    #[test]
+    fn test_should_auto_select_exact_2x() {
+        // Test boundary condition: exactly 2x should auto-select
+        let top_score = 200.0;
+        let second_score = 100.0;
+
+        let should_auto_select = top_score / second_score >= 2.0;
+        assert!(should_auto_select);
+    }
+
+    #[test]
+    fn test_should_auto_select_zero_second_score() {
+        // Test edge case: second score is 0, should always auto-select
+        let second_score = 0.0;
+
+        let should_auto_select = second_score == 0.0;
+        assert!(should_auto_select);
+    }
+
+    #[test]
+    fn test_should_not_auto_select_near_2x() {
+        // Test just under 2x threshold
+        let top_score = 199.0;
+        let second_score = 100.0;
+
+        let should_auto_select = top_score / second_score >= 2.0;
+        assert!(!should_auto_select);
+    }
+
+    #[test]
+    fn test_high_ratio_auto_selects() {
+        // Test very clear winner (5x)
+        let top_score = 500.0;
+        let second_score = 100.0;
+
+        let should_auto_select = top_score / second_score >= 2.0;
+        assert!(should_auto_select);
     }
 }
