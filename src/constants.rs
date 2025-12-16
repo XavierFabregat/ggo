@@ -1,4 +1,6 @@
 /// Frecency scoring time windows (in seconds)
+/// Note: Weights are no longer used as we switched to exponential decay
+/// These constants remain for format_relative_time() function
 pub mod frecency {
     /// One hour in seconds
     pub const HOUR_SECONDS: i64 = 3600;
@@ -11,21 +13,6 @@ pub mod frecency {
 
     /// One month in seconds (30 days)
     pub const MONTH_SECONDS: i64 = 2592000;
-
-    /// Weight for branches used within the last hour
-    pub const HOUR_WEIGHT: f64 = 4.0;
-
-    /// Weight for branches used within the last day
-    pub const DAY_WEIGHT: f64 = 2.0;
-
-    /// Weight for branches used within the last week
-    pub const WEEK_WEIGHT: f64 = 1.0;
-
-    /// Weight for branches used within the last month
-    pub const MONTH_WEIGHT: f64 = 0.5;
-
-    /// Weight for branches older than a month
-    pub const OLD_WEIGHT: f64 = 0.25;
 }
 
 /// Scoring combination constants

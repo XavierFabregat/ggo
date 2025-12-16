@@ -460,6 +460,91 @@ pub fn get_aliases_for_branch(repo_path: &str, branch_name: &str) -> Result<Vec<
     Ok(aliases)
 }
 
+/// Remove branch records older than the specified age (in days)
+pub fn cleanup_old_records(max_age_days: i64) -> Result<usize> {
+    let conn = open_db()?;
+    let now = now_timestamp();
+    let cutoff = now - (max_age_days * 86400);
+
+    let deleted = conn
+        .execute("DELETE FROM branches WHERE last_used < ?1", [cutoff])
+        .context("Failed to cleanup old branch records")?;
+
+    Ok(deleted)
+}
+
+/// Remove branches and aliases that no longer exist in their repositories
+/// Returns the number of records cleaned up
+pub fn cleanup_deleted_branches() -> Result<usize> {
+    let conn = open_db()?;
+    let records = get_all_records()?;
+
+    let mut deleted = 0;
+
+    for record in records {
+        // Try to open the repository
+        if let Ok(repo) = git2::Repository::open(&record.repo_path) {
+            // Check if branch still exists
+            if repo
+                .find_branch(&record.branch_name, git2::BranchType::Local)
+                .is_err()
+            {
+                // Branch doesn't exist anymore, delete it
+                conn.execute(
+                    "DELETE FROM branches WHERE repo_path = ?1 AND branch_name = ?2",
+                    [&record.repo_path, &record.branch_name],
+                )
+                .ok();
+
+                // Also delete any aliases pointing to this branch
+                conn.execute(
+                    "DELETE FROM aliases WHERE repo_path = ?1 AND branch_name = ?2",
+                    [&record.repo_path, &record.branch_name],
+                )
+                .ok();
+
+                deleted += 1;
+            }
+        } else {
+            // Repository doesn't exist anymore, delete all its records
+            let branch_count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM branches WHERE repo_path = ?1",
+                    [&record.repo_path],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+
+            conn.execute("DELETE FROM branches WHERE repo_path = ?1", [&record.repo_path])
+                .ok();
+
+            conn.execute("DELETE FROM aliases WHERE repo_path = ?1", [&record.repo_path])
+                .ok();
+
+            deleted += branch_count as usize;
+        }
+    }
+
+    Ok(deleted)
+}
+
+/// Optimize database with VACUUM and ANALYZE
+pub fn optimize_database() -> Result<()> {
+    let conn = open_db()?;
+    conn.execute("VACUUM", [])
+        .context("Failed to run VACUUM")?;
+    conn.execute("ANALYZE", [])
+        .context("Failed to run ANALYZE")?;
+    Ok(())
+}
+
+/// Get database file size in bytes
+pub fn get_database_size() -> Result<u64> {
+    let db_path = get_db_path()?;
+    let metadata = std::fs::metadata(db_path).context("Failed to get database metadata")?;
+    Ok(metadata.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1811,4 +1896,62 @@ mod tests {
             .unwrap();
         assert_eq!(switch_count, 5);
     }
+
+    #[test]
+    fn test_cleanup_old_records() {
+        let conn = open_test_db().unwrap();
+        let repo_path = unique_repo_path();
+        let now = now_timestamp();
+
+        // Add old and new records
+        do_record_checkout(&conn, &repo_path, "old-branch").unwrap();
+        conn.execute(
+            "UPDATE branches SET last_used = ?1 WHERE branch_name = 'old-branch'",
+            [now - (400 * 86400)], // 400 days old
+        )
+        .unwrap();
+
+        do_record_checkout(&conn, &repo_path, "recent-branch").unwrap();
+
+        // Cleanup records older than 365 days
+        let deleted = conn
+            .execute(
+                "DELETE FROM branches WHERE last_used < ?1",
+                [now - (365 * 86400)],
+            )
+            .unwrap();
+
+        assert_eq!(deleted, 1);
+
+        // Verify old branch was deleted
+        let records = do_get_branch_records(&conn, &repo_path).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].branch_name, "recent-branch");
+    }
+
+    #[test]
+    fn test_optimize_database() {
+        let conn = open_test_db().unwrap();
+
+        // Add some data
+        let repo_path = unique_repo_path();
+        do_record_checkout(&conn, &repo_path, "branch1").unwrap();
+        do_record_checkout(&conn, &repo_path, "branch2").unwrap();
+
+        // Run VACUUM and ANALYZE
+        let result = conn.execute("VACUUM", []);
+        assert!(result.is_ok());
+
+        let result = conn.execute("ANALYZE", []);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_get_database_size() {
+        // Database size should be > 0
+        let result = get_database_size();
+        assert!(result.is_ok());
+        assert!(result.unwrap() > 0);
+    }
 }
+
