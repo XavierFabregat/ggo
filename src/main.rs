@@ -5,7 +5,7 @@ mod interactive;
 mod matcher;
 mod storage;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 
 use cli::{Cli, Commands};
@@ -88,8 +88,18 @@ fn show_stats() -> Result<()> {
 
 fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> Result<()> {
     let branches = git::get_branches()?;
-    let repo_path = git::get_repo_root().unwrap_or_default();
-    let records = storage::get_branch_records(&repo_path).unwrap_or_default();
+    let repo_path = git::get_repo_root()
+        .context("Failed to determine git repository root")?;
+
+    // Try to load branch history, but continue without it if it fails
+    let records = match storage::get_branch_records(&repo_path) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("⚠️  Warning: Could not load branch history: {}", e);
+            eprintln!("   Frecency ranking will not be available.");
+            vec![]
+        }
+    };
 
     let ranked = if use_fuzzy {
         // Use fuzzy matching and combine with frecency
@@ -166,7 +176,8 @@ fn checkout_previous_branch() -> Result<()> {
     // Save current branch before switching
     if let Ok(current_branch) = git::get_current_branch() {
         if let Err(e) = storage::save_previous_branch(&repo_path, &current_branch) {
-            eprintln!("Warning: Failed to save current branch: {}", e);
+            eprintln!("⚠️  Warning: Could not save previous branch: {}", e);
+            eprintln!("   The 'ggo -' command may not work correctly.");
         }
     }
 
@@ -175,7 +186,8 @@ fn checkout_previous_branch() -> Result<()> {
 
     // Record the checkout for frecency tracking
     if let Err(e) = storage::record_checkout(&repo_path, &previous_branch) {
-        eprintln!("Warning: Failed to record checkout: {}", e);
+        eprintln!("⚠️  Warning: Could not save branch usage: {}", e);
+        eprintln!("   This won't affect future checkouts, but frecency tracking may be incomplete.");
     }
 
     println!("Switched to branch '{}'", previous_branch);
@@ -312,8 +324,18 @@ fn find_and_checkout_branch(
     interactive: bool,
 ) -> Result<String> {
     let branches = git::get_branches()?;
-    let repo_path = git::get_repo_root().unwrap_or_default();
-    let records = storage::get_branch_records(&repo_path).unwrap_or_default();
+    let repo_path = git::get_repo_root()
+        .context("Failed to determine git repository root")?;
+
+    // Try to load branch history, but continue without it if it fails
+    let records = match storage::get_branch_records(&repo_path) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("⚠️  Warning: Could not load branch history: {}", e);
+            eprintln!("   Frecency ranking will not be available.");
+            vec![]
+        }
+    };
 
     // Check if pattern is an exact alias match (highest priority)
     // Note: get_alias() only returns aliases for the current repo (scoped by repo_path)
@@ -328,7 +350,8 @@ fn find_and_checkout_branch(
             if let Some(ref current) = current_branch {
                 if current != &branch_name {
                     if let Err(e) = storage::save_previous_branch(&repo_path, current) {
-                        eprintln!("Warning: Failed to save current branch: {}", e);
+                        eprintln!("⚠️  Warning: Could not save previous branch: {}", e);
+                        eprintln!("   The 'ggo -' command may not work correctly.");
                     }
                 }
             }
@@ -336,7 +359,8 @@ fn find_and_checkout_branch(
             git::checkout(&branch_name)?;
 
             if let Err(e) = storage::record_checkout(&repo_path, &branch_name) {
-                eprintln!("Warning: Failed to record checkout: {}", e);
+                eprintln!("⚠️  Warning: Could not save branch usage: {}", e);
+                eprintln!("   This won't affect future checkouts, but frecency tracking may be incomplete.");
             }
 
             return Ok(branch_name);
@@ -415,7 +439,8 @@ fn find_and_checkout_branch(
     // Record the checkout for frecency tracking
     if let Err(e) = storage::record_checkout(&repo_path, &branch_to_checkout) {
         // Don't fail the checkout if recording fails, just warn
-        eprintln!("Warning: Failed to record checkout: {}", e);
+        eprintln!("⚠️  Warning: Could not save branch usage: {}", e);
+        eprintln!("   This won't affect future checkouts, but frecency tracking may be incomplete.");
     }
 
     Ok(branch_to_checkout)
