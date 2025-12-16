@@ -13,6 +13,17 @@ pub struct BranchRecord {
     pub last_used: i64,
 }
 
+/// Branch alias record from the database
+#[derive(Debug, Clone)]
+pub struct Alias {
+    #[allow(dead_code)]
+    pub repo_path: String,
+    pub alias: String,
+    pub branch_name: String,
+    #[allow(dead_code)]
+    pub created_at: i64,
+}
+
 /// Get the path to the ggo data directory (~/.config/ggo on Unix)
 fn get_data_dir() -> Result<PathBuf> {
     let config_dir = dirs::config_local_dir()
@@ -53,6 +64,18 @@ fn initialize_tables(conn: &Connection) -> Result<()> {
         [],
     )
     .context("Failed to create branches table")?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS aliases (
+            repo_path TEXT NOT NULL,
+            alias TEXT NOT NULL,
+            branch_name TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (repo_path, alias)
+        )",
+        [],
+    )
+    .context("Failed to create aliases table")?;
 
     Ok(())
 }
@@ -242,6 +265,102 @@ pub fn get_previous_branch(repo_path: &str) -> Result<Option<String>> {
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
         Err(e) => Err(e).context("Failed to get previous branch"),
     }
+}
+
+/// Create or update an alias for a branch
+pub fn create_alias(repo_path: &str, alias: &str, branch_name: &str) -> Result<()> {
+    let conn = open_db()?;
+    let now = now_timestamp();
+
+    conn.execute(
+        "INSERT OR REPLACE INTO aliases (repo_path, alias, branch_name, created_at)
+         VALUES (?1, ?2, ?3, ?4)",
+        [repo_path, alias, branch_name, &now.to_string()],
+    )
+    .context("Failed to create alias")?;
+
+    Ok(())
+}
+
+/// Get the branch name for an alias
+pub fn get_alias(repo_path: &str, alias: &str) -> Result<Option<String>> {
+    let conn = open_db()?;
+
+    let result = conn.query_row(
+        "SELECT branch_name FROM aliases WHERE repo_path = ?1 AND alias = ?2",
+        [repo_path, alias],
+        |row| row.get::<_, String>(0),
+    );
+
+    match result {
+        Ok(branch) => Ok(Some(branch)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e).context("Failed to get alias"),
+    }
+}
+
+/// Delete an alias
+pub fn delete_alias(repo_path: &str, alias: &str) -> Result<()> {
+    let conn = open_db()?;
+
+    conn.execute(
+        "DELETE FROM aliases WHERE repo_path = ?1 AND alias = ?2",
+        [repo_path, alias],
+    )
+    .context("Failed to delete alias")?;
+
+    Ok(())
+}
+
+/// List all aliases for a repository
+pub fn list_aliases(repo_path: &str) -> Result<Vec<Alias>> {
+    let conn = open_db()?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT repo_path, alias, branch_name, created_at
+             FROM aliases
+             WHERE repo_path = ?1
+             ORDER BY alias",
+        )
+        .context("Failed to prepare query")?;
+
+    let aliases = stmt
+        .query_map([repo_path], |row| {
+            Ok(Alias {
+                repo_path: row.get(0)?,
+                alias: row.get(1)?,
+                branch_name: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })
+        .context("Failed to query aliases")?
+        .map_while(Result::ok)
+        .collect();
+
+    Ok(aliases)
+}
+
+/// Get all aliases pointing to a specific branch
+pub fn get_aliases_for_branch(repo_path: &str, branch_name: &str) -> Result<Vec<String>> {
+    let conn = open_db()?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT alias
+             FROM aliases
+             WHERE repo_path = ?1 AND branch_name = ?2
+             ORDER BY alias",
+        )
+        .context("Failed to prepare query")?;
+
+    let aliases = stmt
+        .query_map([repo_path, branch_name], |row| row.get::<_, String>(0))
+        .context("Failed to query aliases")?
+        .map_while(Result::ok)
+        .collect();
+
+    Ok(aliases)
 }
 
 #[cfg(test)]
@@ -923,5 +1042,379 @@ mod tests {
         let records = do_get_branch_records(&conn, &long_path).unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].repo_path, long_path);
+    }
+
+    // Alias test helper functions
+    fn do_create_alias(
+        conn: &Connection,
+        repo_path: &str,
+        alias: &str,
+        branch_name: &str,
+    ) -> Result<()> {
+        let now = now_timestamp();
+
+        conn.execute(
+            "INSERT OR REPLACE INTO aliases (repo_path, alias, branch_name, created_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            [repo_path, alias, branch_name, &now.to_string()],
+        )
+        .context("Failed to create alias")?;
+
+        Ok(())
+    }
+
+    fn do_get_alias(conn: &Connection, repo_path: &str, alias: &str) -> Result<Option<String>> {
+        let result = conn.query_row(
+            "SELECT branch_name FROM aliases WHERE repo_path = ?1 AND alias = ?2",
+            [repo_path, alias],
+            |row| row.get::<_, String>(0),
+        );
+
+        match result {
+            Ok(branch) => Ok(Some(branch)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e).context("Failed to get alias"),
+        }
+    }
+
+    fn do_delete_alias(conn: &Connection, repo_path: &str, alias: &str) -> Result<()> {
+        conn.execute(
+            "DELETE FROM aliases WHERE repo_path = ?1 AND alias = ?2",
+            [repo_path, alias],
+        )
+        .context("Failed to delete alias")?;
+
+        Ok(())
+    }
+
+    fn do_list_aliases(conn: &Connection, repo_path: &str) -> Result<Vec<Alias>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT repo_path, alias, branch_name, created_at
+                 FROM aliases
+                 WHERE repo_path = ?1
+                 ORDER BY alias",
+            )
+            .context("Failed to prepare query")?;
+
+        let aliases = stmt
+            .query_map([repo_path], |row| {
+                Ok(Alias {
+                    repo_path: row.get(0)?,
+                    alias: row.get(1)?,
+                    branch_name: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })
+            .context("Failed to query aliases")?
+            .map_while(Result::ok)
+            .collect();
+
+        Ok(aliases)
+    }
+
+    fn do_get_aliases_for_branch(
+        conn: &Connection,
+        repo_path: &str,
+        branch_name: &str,
+    ) -> Result<Vec<String>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT alias
+                 FROM aliases
+                 WHERE repo_path = ?1 AND branch_name = ?2
+                 ORDER BY alias",
+            )
+            .context("Failed to prepare query")?;
+
+        let aliases = stmt
+            .query_map([repo_path, branch_name], |row| row.get::<_, String>(0))
+            .context("Failed to query aliases")?
+            .map_while(Result::ok)
+            .collect();
+
+        Ok(aliases)
+    }
+
+    #[test]
+    fn test_create_alias() {
+        let conn = open_test_db().unwrap();
+        let repo_path = unique_repo_path();
+
+        let result = do_create_alias(&conn, &repo_path, "m", "master");
+        assert!(result.is_ok());
+
+        let branch = do_get_alias(&conn, &repo_path, "m").unwrap();
+        assert_eq!(branch, Some("master".to_string()));
+    }
+
+    #[test]
+    fn test_create_alias_updates_existing() {
+        let conn = open_test_db().unwrap();
+        let repo_path = unique_repo_path();
+
+        do_create_alias(&conn, &repo_path, "m", "master").unwrap();
+        do_create_alias(&conn, &repo_path, "m", "main").unwrap();
+
+        let branch = do_get_alias(&conn, &repo_path, "m").unwrap();
+        assert_eq!(branch, Some("main".to_string()));
+
+        // Verify only one alias exists
+        let aliases = do_list_aliases(&conn, &repo_path).unwrap();
+        assert_eq!(aliases.len(), 1);
+    }
+
+    #[test]
+    fn test_get_alias_not_found() {
+        let conn = open_test_db().unwrap();
+        let repo_path = unique_repo_path();
+
+        let result = do_get_alias(&conn, &repo_path, "nonexistent");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_delete_alias() {
+        let conn = open_test_db().unwrap();
+        let repo_path = unique_repo_path();
+
+        do_create_alias(&conn, &repo_path, "m", "master").unwrap();
+        let result = do_delete_alias(&conn, &repo_path, "m");
+        assert!(result.is_ok());
+
+        let branch = do_get_alias(&conn, &repo_path, "m").unwrap();
+        assert_eq!(branch, None);
+    }
+
+    #[test]
+    fn test_list_aliases_empty() {
+        let conn = open_test_db().unwrap();
+        let repo_path = unique_repo_path();
+
+        let aliases = do_list_aliases(&conn, &repo_path).unwrap();
+        assert_eq!(aliases.len(), 0);
+    }
+
+    #[test]
+    fn test_list_aliases_multiple() {
+        let conn = open_test_db().unwrap();
+        let repo_path = unique_repo_path();
+
+        do_create_alias(&conn, &repo_path, "m", "master").unwrap();
+        do_create_alias(&conn, &repo_path, "d", "develop").unwrap();
+        do_create_alias(&conn, &repo_path, "f", "feature/test").unwrap();
+
+        let aliases = do_list_aliases(&conn, &repo_path).unwrap();
+        assert_eq!(aliases.len(), 3);
+
+        let alias_names: Vec<&str> = aliases.iter().map(|a| a.alias.as_str()).collect();
+        assert!(alias_names.contains(&"m"));
+        assert!(alias_names.contains(&"d"));
+        assert!(alias_names.contains(&"f"));
+    }
+
+    #[test]
+    fn test_list_aliases_sorted() {
+        let conn = open_test_db().unwrap();
+        let repo_path = unique_repo_path();
+
+        do_create_alias(&conn, &repo_path, "z", "zzz").unwrap();
+        do_create_alias(&conn, &repo_path, "a", "aaa").unwrap();
+        do_create_alias(&conn, &repo_path, "m", "mmm").unwrap();
+
+        let aliases = do_list_aliases(&conn, &repo_path).unwrap();
+        assert_eq!(aliases.len(), 3);
+
+        // Should be sorted alphabetically by alias
+        assert_eq!(aliases[0].alias, "a");
+        assert_eq!(aliases[1].alias, "m");
+        assert_eq!(aliases[2].alias, "z");
+    }
+
+    #[test]
+    fn test_list_aliases_filters_by_repo() {
+        let conn = open_test_db().unwrap();
+        let repo_path1 = unique_repo_path();
+        let repo_path2 = unique_repo_path();
+
+        do_create_alias(&conn, &repo_path1, "m", "master").unwrap();
+        do_create_alias(&conn, &repo_path2, "m", "main").unwrap();
+        do_create_alias(&conn, &repo_path2, "d", "develop").unwrap();
+
+        let aliases1 = do_list_aliases(&conn, &repo_path1).unwrap();
+        let aliases2 = do_list_aliases(&conn, &repo_path2).unwrap();
+
+        assert_eq!(aliases1.len(), 1);
+        assert_eq!(aliases2.len(), 2);
+    }
+
+    #[test]
+    fn test_get_aliases_for_branch_empty() {
+        let conn = open_test_db().unwrap();
+        let repo_path = unique_repo_path();
+
+        let aliases = do_get_aliases_for_branch(&conn, &repo_path, "master").unwrap();
+        assert_eq!(aliases.len(), 0);
+    }
+
+    #[test]
+    fn test_get_aliases_for_branch_single() {
+        let conn = open_test_db().unwrap();
+        let repo_path = unique_repo_path();
+
+        do_create_alias(&conn, &repo_path, "m", "master").unwrap();
+
+        let aliases = do_get_aliases_for_branch(&conn, &repo_path, "master").unwrap();
+        assert_eq!(aliases.len(), 1);
+        assert_eq!(aliases[0], "m");
+    }
+
+    #[test]
+    fn test_get_aliases_for_branch_multiple() {
+        let conn = open_test_db().unwrap();
+        let repo_path = unique_repo_path();
+
+        do_create_alias(&conn, &repo_path, "m", "master").unwrap();
+        do_create_alias(&conn, &repo_path, "main", "master").unwrap();
+        do_create_alias(&conn, &repo_path, "prod", "master").unwrap();
+        do_create_alias(&conn, &repo_path, "d", "develop").unwrap();
+
+        let aliases = do_get_aliases_for_branch(&conn, &repo_path, "master").unwrap();
+        assert_eq!(aliases.len(), 3);
+        assert!(aliases.contains(&"m".to_string()));
+        assert!(aliases.contains(&"main".to_string()));
+        assert!(aliases.contains(&"prod".to_string()));
+    }
+
+    #[test]
+    fn test_alias_with_special_characters() {
+        let conn = open_test_db().unwrap();
+        let repo_path = unique_repo_path();
+
+        do_create_alias(&conn, &repo_path, "my-alias", "feature/test-123").unwrap();
+
+        let branch = do_get_alias(&conn, &repo_path, "my-alias").unwrap();
+        assert_eq!(branch, Some("feature/test-123".to_string()));
+    }
+
+    #[test]
+    fn test_alias_struct_clone() {
+        let alias = Alias {
+            repo_path: "/test".to_string(),
+            alias: "m".to_string(),
+            branch_name: "master".to_string(),
+            created_at: 1234567890,
+        };
+
+        let cloned = alias.clone();
+        assert_eq!(alias.repo_path, cloned.repo_path);
+        assert_eq!(alias.alias, cloned.alias);
+        assert_eq!(alias.branch_name, cloned.branch_name);
+        assert_eq!(alias.created_at, cloned.created_at);
+    }
+
+    #[test]
+    fn test_alias_struct_debug() {
+        let alias = Alias {
+            repo_path: "/test".to_string(),
+            alias: "m".to_string(),
+            branch_name: "master".to_string(),
+            created_at: 1234567890,
+        };
+
+        let debug_str = format!("{:?}", alias);
+        assert!(debug_str.contains("/test"));
+        assert!(debug_str.contains("m"));
+        assert!(debug_str.contains("master"));
+        assert!(debug_str.contains("1234567890"));
+    }
+
+    #[test]
+    fn test_alias_repo_isolation() {
+        let conn = open_test_db().unwrap();
+        let repo_path1 = unique_repo_path();
+        let repo_path2 = unique_repo_path();
+
+        // Create alias "m" → "master" in repo1
+        do_create_alias(&conn, &repo_path1, "m", "master").unwrap();
+
+        // Try to get alias "m" from repo2 - should return None
+        let result = do_get_alias(&conn, &repo_path2, "m").unwrap();
+        assert_eq!(
+            result, None,
+            "Alias from repo1 should not be accessible in repo2"
+        );
+
+        // Verify it still works in repo1
+        let result = do_get_alias(&conn, &repo_path1, "m").unwrap();
+        assert_eq!(result, Some("master".to_string()));
+    }
+
+    #[test]
+    fn test_alias_same_name_different_repos() {
+        let conn = open_test_db().unwrap();
+        let repo_path1 = unique_repo_path();
+        let repo_path2 = unique_repo_path();
+
+        // Create alias "m" → "master" in repo1
+        do_create_alias(&conn, &repo_path1, "m", "master").unwrap();
+
+        // Create alias "m" → "main" in repo2 (same alias name, different branch)
+        do_create_alias(&conn, &repo_path2, "m", "main").unwrap();
+
+        // Verify each repo gets its own alias
+        let result1 = do_get_alias(&conn, &repo_path1, "m").unwrap();
+        assert_eq!(result1, Some("master".to_string()));
+
+        let result2 = do_get_alias(&conn, &repo_path2, "m").unwrap();
+        assert_eq!(result2, Some("main".to_string()));
+    }
+
+    #[test]
+    fn test_delete_alias_only_affects_current_repo() {
+        let conn = open_test_db().unwrap();
+        let repo_path1 = unique_repo_path();
+        let repo_path2 = unique_repo_path();
+
+        // Create same alias in both repos
+        do_create_alias(&conn, &repo_path1, "m", "master").unwrap();
+        do_create_alias(&conn, &repo_path2, "m", "main").unwrap();
+
+        // Delete from repo1
+        do_delete_alias(&conn, &repo_path1, "m").unwrap();
+
+        // Verify deleted in repo1
+        let result1 = do_get_alias(&conn, &repo_path1, "m").unwrap();
+        assert_eq!(result1, None);
+
+        // Verify still exists in repo2
+        let result2 = do_get_alias(&conn, &repo_path2, "m").unwrap();
+        assert_eq!(result2, Some("main".to_string()));
+    }
+
+    #[test]
+    fn test_get_aliases_for_branch_repo_scoped() {
+        let conn = open_test_db().unwrap();
+        let repo_path1 = unique_repo_path();
+        let repo_path2 = unique_repo_path();
+
+        // Create aliases for "master" in both repos
+        do_create_alias(&conn, &repo_path1, "m", "master").unwrap();
+        do_create_alias(&conn, &repo_path1, "prod", "master").unwrap();
+        do_create_alias(&conn, &repo_path2, "main", "master").unwrap();
+
+        // Get aliases for "master" in repo1 - should only get repo1's aliases
+        let aliases1 = do_get_aliases_for_branch(&conn, &repo_path1, "master").unwrap();
+        assert_eq!(aliases1.len(), 2);
+        assert!(aliases1.contains(&"m".to_string()));
+        assert!(aliases1.contains(&"prod".to_string()));
+        assert!(!aliases1.contains(&"main".to_string()));
+
+        // Get aliases for "master" in repo2 - should only get repo2's aliases
+        let aliases2 = do_get_aliases_for_branch(&conn, &repo_path2, "master").unwrap();
+        assert_eq!(aliases2.len(), 1);
+        assert!(aliases2.contains(&"main".to_string()));
+        assert!(!aliases2.contains(&"m".to_string()));
     }
 }

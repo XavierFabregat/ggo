@@ -216,3 +216,42 @@ CREATE TABLE repositories (
 
 ---
 
+
+## Open Questions
+
+- Should we support `git worktree` navigation?
+- How to handle branches with the same name in different repos?
+- Should we track remote branches separately?
+- Integration with GitHub/GitLab for PR branches?
+- Should we support other VCS (Mercurial, SVN)?
+
+---
+
+## Known Issues / Improvements
+
+### CLI Flag Conflict
+**Issue:** The `-i` flag is currently used for `--ignore-case`, but the roadmap originally planned it for interactive mode.
+
+**Current state:**
+- `-i` = `--ignore-case` (case-insensitive matching)
+- `--interactive` = interactive mode (long form only)
+
+**Proposed solution:**
+- Keep `-i` for `--ignore-case` (common convention in Unix tools)
+- Add `-I` (capital I) as short flag for `--interactive`
+- This maintains compatibility and follows common CLI patterns
+
+**Reference:** Phase 3 line 71 shows the original plan for `-i` as interactive mode
+
+---
+
+## Getting Started
+
+Current status: **Phase 1 (MVP)**
+
+Next steps:
+1. Implement basic pattern matching in Rust
+2. Add comprehensive error handling
+3. Write tests for git operations
+4. Create installation instructions
+5. Gather user feedback before Phase 2
