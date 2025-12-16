@@ -16,9 +16,11 @@ pub struct BranchRecord {
 /// Branch alias record from the database
 #[derive(Debug, Clone)]
 pub struct Alias {
+    #[allow(dead_code)]
     pub repo_path: String,
     pub alias: String,
     pub branch_name: String,
+    #[allow(dead_code)]
     pub created_at: i64,
 }
 
