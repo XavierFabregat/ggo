@@ -505,7 +505,6 @@ mod tests {
             score: 0,
         }];
         let records: Vec<BranchRecord> = vec![];
- 
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
 
         assert_eq!(result.len(), 1);
@@ -579,11 +578,7 @@ mod tests {
         // Test edge case: second score is 0, should always auto-select
         let second_score = 0.0;
 
-        let should_auto_select = if second_score == 0.0 {
-            true
-        } else {
-            false
-        };
+        let should_auto_select = if second_score == 0.0 { true } else { false };
         assert!(should_auto_select);
     }
 
