@@ -33,8 +33,7 @@ fn get_data_dir() -> Result<PathBuf> {
     // Check for test/override directory first
     if let Ok(test_dir) = std::env::var("GGO_DATA_DIR") {
         let path = PathBuf::from(test_dir);
-        std::fs::create_dir_all(&path)
-            .context("Failed to create GGO_DATA_DIR directory")?;
+        std::fs::create_dir_all(&path).context("Failed to create GGO_DATA_DIR directory")?;
         return Ok(path);
     }
 
@@ -1687,22 +1686,14 @@ mod tests {
 
         // Get current version count
         let version_count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM schema_version",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM schema_version", [], |row| row.get(0))
             .unwrap();
 
         // Run initialization again (should not add duplicate versions)
         initialize_tables(&conn).unwrap();
 
         let new_version_count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM schema_version",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM schema_version", [], |row| row.get(0))
             .unwrap();
 
         // Count should be the same (no duplicate migrations)

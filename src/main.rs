@@ -1,4 +1,5 @@
 mod cli;
+mod constants;
 mod frecency;
 mod git;
 mod interactive;
@@ -10,6 +11,7 @@ use anyhow::{bail, Context, Result};
 use clap::Parser;
 
 use cli::{Cli, Commands};
+use constants::scoring::{AUTO_SELECT_THRESHOLD, FRECENCY_MULTIPLIER};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -53,8 +55,7 @@ fn main() -> Result<()> {
     }
 
     // Validate search pattern
-    validation::validate_pattern(pattern)
-        .context("Invalid search pattern")?;
+    validation::validate_pattern(pattern).context("Invalid search pattern")?;
 
     if cli.list {
         list_matching_branches(pattern, cli.ignore_case, !cli.no_fuzzy)?;
@@ -99,8 +100,7 @@ fn show_stats() -> Result<()> {
 
 fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> Result<()> {
     let branches = git::get_branches()?;
-    let repo_path = git::get_repo_root()
-        .context("Failed to determine git repository root")?;
+    let repo_path = git::get_repo_root().context("Failed to determine git repository root")?;
 
     // Try to load branch history, but continue without it if it fails
     let records = match storage::get_branch_records(&repo_path) {
@@ -185,8 +185,8 @@ fn checkout_previous_branch() -> Result<()> {
     })?;
 
     // Re-verify branch exists before checkout (prevent race condition)
-    let current_branches = git::get_branches()
-        .context("Failed to verify branch list before checkout")?;
+    let current_branches =
+        git::get_branches().context("Failed to verify branch list before checkout")?;
 
     if !current_branches.contains(&previous_branch) {
         bail!(
@@ -209,7 +209,9 @@ fn checkout_previous_branch() -> Result<()> {
     // Record the checkout for frecency tracking
     if let Err(e) = storage::record_checkout(&repo_path, &previous_branch) {
         eprintln!("⚠️  Warning: Could not save branch usage: {}", e);
-        eprintln!("   This won't affect future checkouts, but frecency tracking may be incomplete.");
+        eprintln!(
+            "   This won't affect future checkouts, but frecency tracking may be incomplete."
+        );
     }
 
     println!("Switched to branch '{}'", previous_branch);
@@ -252,12 +254,10 @@ fn handle_alias_command(
     // If branch is provided, create/update alias
     if let Some(branch_name) = branch {
         // Validate alias name
-        validation::validate_alias_name(alias)
-            .context("Invalid alias name")?;
+        validation::validate_alias_name(alias).context("Invalid alias name")?;
 
         // Validate branch name
-        validation::validate_branch_name(branch_name)
-            .context("Invalid branch name")?;
+        validation::validate_branch_name(branch_name).context("Invalid branch name")?;
 
         // Validate that branch exists
         let branches = git::get_branches()?;
@@ -309,8 +309,8 @@ fn combine_fuzzy_and_frecency_scores(
             let frecency_score = frecency_map.get(m.branch.as_str()).copied().unwrap_or(0.0);
 
             // Combine scores: fuzzy match quality + (frecency * weight)
-            // Frecency gets a 10x multiplier to give it significant weight
-            let combined_score = fuzzy_score + (frecency_score * 10.0);
+            // Frecency gets a multiplier to give it significant weight
+            let combined_score = fuzzy_score + (frecency_score * FRECENCY_MULTIPLIER);
 
             (m.branch.clone(), combined_score)
         })
@@ -329,8 +329,7 @@ fn find_and_checkout_branch(
     interactive: bool,
 ) -> Result<String> {
     let branches = git::get_branches()?;
-    let repo_path = git::get_repo_root()
-        .context("Failed to determine git repository root")?;
+    let repo_path = git::get_repo_root().context("Failed to determine git repository root")?;
 
     // Try to load branch history, but continue without it if it fails
     let records = match storage::get_branch_records(&repo_path) {
@@ -352,8 +351,8 @@ fn find_and_checkout_branch(
             println!("Using alias '{}' → '{}'", pattern, branch_name);
 
             // Re-verify branch exists before checkout (prevent race condition)
-            let current_branches = git::get_branches()
-                .context("Failed to verify branch list before checkout")?;
+            let current_branches =
+                git::get_branches().context("Failed to verify branch list before checkout")?;
 
             if !current_branches.contains(&branch_name) {
                 bail!(
@@ -423,12 +422,12 @@ fn find_and_checkout_branch(
         let top_score = ranked[0].1;
         let second_score = ranked[1].1;
 
-        // If top score is 2x or more than second, auto-select
+        // If top score is above threshold compared to second, auto-select
         // Handle edge case where second_score is 0
         let should_auto_select = if second_score == 0.0 {
             true
         } else {
-            top_score / second_score >= 2.0
+            top_score / second_score >= AUTO_SELECT_THRESHOLD
         };
 
         if should_auto_select {
@@ -441,8 +440,8 @@ fn find_and_checkout_branch(
     };
 
     // Re-verify branch exists before checkout (prevent race condition)
-    let current_branches = git::get_branches()
-        .context("Failed to verify branch list before checkout")?;
+    let current_branches =
+        git::get_branches().context("Failed to verify branch list before checkout")?;
 
     if !current_branches.contains(&branch_to_checkout) {
         bail!(
@@ -469,7 +468,9 @@ fn find_and_checkout_branch(
     if let Err(e) = storage::record_checkout(&repo_path, &branch_to_checkout) {
         // Don't fail the checkout if recording fails, just warn
         eprintln!("⚠️  Warning: Could not save branch usage: {}", e);
-        eprintln!("   This won't affect future checkouts, but frecency tracking may be incomplete.");
+        eprintln!(
+            "   This won't affect future checkouts, but frecency tracking may be incomplete."
+        );
     }
 
     Ok(branch_to_checkout)
