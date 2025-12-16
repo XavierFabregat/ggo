@@ -4,6 +4,7 @@ mod git;
 mod interactive;
 mod matcher;
 mod storage;
+mod validation;
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
@@ -44,6 +45,10 @@ fn main() -> Result<()> {
         checkout_previous_branch()?;
         return Ok(());
     }
+
+    // Validate search pattern
+    validation::validate_pattern(pattern)
+        .context("Invalid search pattern")?;
 
     if cli.list {
         list_matching_branches(pattern, cli.ignore_case, !cli.no_fuzzy)?;
@@ -241,12 +246,12 @@ fn handle_alias_command(
     // If branch is provided, create/update alias
     if let Some(branch_name) = branch {
         // Validate alias name
-        if !is_valid_alias(alias) {
-            bail!(
-                "Invalid alias name '{}'\n\nAlias requirements:\n  • Only alphanumeric characters, dash (-), or underscore (_)\n  • Cannot start with '-'\n  • Cannot be 'stats' or 'alias' (reserved words)",
-                alias
-            );
-        }
+        validation::validate_alias_name(alias)
+            .context("Invalid alias name")?;
+
+        // Validate branch name
+        validation::validate_branch_name(branch_name)
+            .context("Invalid branch name")?;
 
         // Validate that branch exists
         let branches = git::get_branches()?;
@@ -274,23 +279,6 @@ fn handle_alias_command(
     }
 
     Ok(())
-}
-
-/// Validate alias name
-fn is_valid_alias(alias: &str) -> bool {
-    if alias.is_empty() || alias.starts_with('-') {
-        return false;
-    }
-
-    // Check if alias is a reserved word
-    if matches!(alias, "stats" | "alias") {
-        return false;
-    }
-
-    // Allow alphanumeric, dash, and underscore
-    alias
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
 }
 
 /// Combine fuzzy match scores with frecency scores for final ranking

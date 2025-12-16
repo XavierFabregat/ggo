@@ -2,6 +2,8 @@ use anyhow::{bail, Context, Result};
 use std::io::BufRead;
 use std::process::Command;
 
+use crate::validation;
+
 /// Get all local git branches in the current repository
 pub fn get_branches() -> Result<Vec<String>> {
     let output = Command::new("git")
@@ -25,6 +27,10 @@ pub fn get_branches() -> Result<Vec<String>> {
 
 /// Checkout the specified branch
 pub fn checkout(branch: &str) -> Result<()> {
+    // Validate branch name before attempting checkout
+    validation::validate_branch_name(branch)
+        .context("Cannot checkout invalid branch name")?;
+
     let output = Command::new("git")
         .args(["checkout", branch])
         .output()
@@ -50,6 +56,11 @@ pub fn get_repo_root() -> Result<String> {
     }
 
     let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    // Validate the returned repo path
+    validation::validate_repo_path(&path)
+        .context("Git returned invalid repository path")?;
+
     Ok(path)
 }
 
