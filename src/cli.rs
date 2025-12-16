@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 /// ggo - Smart Git Navigation Tool
 ///
@@ -16,6 +16,11 @@ use clap::Parser;
 ///     ggo --interactive feat   Show interactive menu to select branch
 ///     ggo --stats      Show usage statistics
 ///
+///     ggo alias m master        Create alias 'm' for branch 'master'
+///     ggo alias m               Show what alias 'm' points to
+///     ggo alias --list          List all aliases
+///     ggo alias --remove m      Remove alias 'm'
+///
 /// NOTE:
 ///     ggo learns from your usage patterns. The more you use a branch,
 ///     the higher it ranks in search results. Fuzzy matching is enabled
@@ -25,8 +30,10 @@ use clap::Parser;
 #[command(version)]
 #[command(about = "Smart Git Navigation Tool", long_about = None)]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+
     /// Search pattern to match branch names (use '-' to go back to previous branch)
-    #[arg(required_unless_present = "stats")]
     pub pattern: Option<String>,
 
     /// List matching branches without checking out
@@ -48,6 +55,27 @@ pub struct Cli {
     /// Show usage statistics
     #[arg(long)]
     pub stats: bool,
+}
+
+#[derive(Subcommand, Debug, PartialEq)]
+pub enum Commands {
+    /// Manage branch aliases
+    Alias {
+        /// Alias name (not required when using --list)
+        #[arg(required_unless_present = "list")]
+        alias: Option<String>,
+
+        /// Branch name (if provided, creates/updates alias; if omitted, shows what alias points to)
+        branch: Option<String>,
+
+        /// List all aliases for the current repository
+        #[arg(short, long)]
+        list: bool,
+
+        /// Remove the alias
+        #[arg(short, long)]
+        remove: bool,
+    },
 }
 
 #[cfg(test)]
@@ -234,10 +262,15 @@ mod tests {
 
     #[test]
     fn test_parse_no_args_without_stats() {
-        // Should fail because pattern is required unless stats is provided
+        // Pattern is optional now (for subcommands), so parse succeeds
+        // but main() will handle the error if no command/stats/pattern provided
         let args = vec!["ggo"];
         let result = Cli::try_parse_from(args);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert_eq!(cli.pattern, None);
+        assert_eq!(cli.command, None);
+        assert!(!cli.stats);
     }
 
     #[test]

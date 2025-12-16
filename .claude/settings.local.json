@@ -6,8 +6,16 @@
       "Bash(git checkout:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
+      "Bash(ggo --version:*)",
+      "Bash(tokei:*)",
+      "Bash(find:*)",
+      "Bash(cargo clippy:*)",
       "Bash(cargo test:*)",
-      "Bash(ggo --version:*)"
+      "Bash(cargo install:*)",
+      "Bash(ggo alias:*)",
+      "Bash(ggo --list:*)",
+      "Bash(ggo fa:*)",
+      "Bash(cargo fmt:*)"
     ],
     "deny": [],
     "ask": []
