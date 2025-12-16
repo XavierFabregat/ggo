@@ -1329,4 +1329,89 @@ mod tests {
         assert!(debug_str.contains("master"));
         assert!(debug_str.contains("1234567890"));
     }
+
+    #[test]
+    fn test_alias_repo_isolation() {
+        let conn = open_test_db().unwrap();
+        let repo_path1 = unique_repo_path();
+        let repo_path2 = unique_repo_path();
+
+        // Create alias "m" → "master" in repo1
+        do_create_alias(&conn, &repo_path1, "m", "master").unwrap();
+
+        // Try to get alias "m" from repo2 - should return None
+        let result = do_get_alias(&conn, &repo_path2, "m").unwrap();
+        assert_eq!(result, None, "Alias from repo1 should not be accessible in repo2");
+
+        // Verify it still works in repo1
+        let result = do_get_alias(&conn, &repo_path1, "m").unwrap();
+        assert_eq!(result, Some("master".to_string()));
+    }
+
+    #[test]
+    fn test_alias_same_name_different_repos() {
+        let conn = open_test_db().unwrap();
+        let repo_path1 = unique_repo_path();
+        let repo_path2 = unique_repo_path();
+
+        // Create alias "m" → "master" in repo1
+        do_create_alias(&conn, &repo_path1, "m", "master").unwrap();
+
+        // Create alias "m" → "main" in repo2 (same alias name, different branch)
+        do_create_alias(&conn, &repo_path2, "m", "main").unwrap();
+
+        // Verify each repo gets its own alias
+        let result1 = do_get_alias(&conn, &repo_path1, "m").unwrap();
+        assert_eq!(result1, Some("master".to_string()));
+
+        let result2 = do_get_alias(&conn, &repo_path2, "m").unwrap();
+        assert_eq!(result2, Some("main".to_string()));
+    }
+
+    #[test]
+    fn test_delete_alias_only_affects_current_repo() {
+        let conn = open_test_db().unwrap();
+        let repo_path1 = unique_repo_path();
+        let repo_path2 = unique_repo_path();
+
+        // Create same alias in both repos
+        do_create_alias(&conn, &repo_path1, "m", "master").unwrap();
+        do_create_alias(&conn, &repo_path2, "m", "main").unwrap();
+
+        // Delete from repo1
+        do_delete_alias(&conn, &repo_path1, "m").unwrap();
+
+        // Verify deleted in repo1
+        let result1 = do_get_alias(&conn, &repo_path1, "m").unwrap();
+        assert_eq!(result1, None);
+
+        // Verify still exists in repo2
+        let result2 = do_get_alias(&conn, &repo_path2, "m").unwrap();
+        assert_eq!(result2, Some("main".to_string()));
+    }
+
+    #[test]
+    fn test_get_aliases_for_branch_repo_scoped() {
+        let conn = open_test_db().unwrap();
+        let repo_path1 = unique_repo_path();
+        let repo_path2 = unique_repo_path();
+
+        // Create aliases for "master" in both repos
+        do_create_alias(&conn, &repo_path1, "m", "master").unwrap();
+        do_create_alias(&conn, &repo_path1, "prod", "master").unwrap();
+        do_create_alias(&conn, &repo_path2, "main", "master").unwrap();
+
+        // Get aliases for "master" in repo1 - should only get repo1's aliases
+        let aliases1 = do_get_aliases_for_branch(&conn, &repo_path1, "master").unwrap();
+        assert_eq!(aliases1.len(), 2);
+        assert!(aliases1.contains(&"m".to_string()));
+        assert!(aliases1.contains(&"prod".to_string()));
+        assert!(!aliases1.contains(&"main".to_string()));
+
+        // Get aliases for "master" in repo2 - should only get repo2's aliases
+        let aliases2 = do_get_aliases_for_branch(&conn, &repo_path2, "master").unwrap();
+        assert_eq!(aliases2.len(), 1);
+        assert!(aliases2.contains(&"main".to_string()));
+        assert!(!aliases2.contains(&"m".to_string()));
+    }
 }
