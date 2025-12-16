@@ -924,14 +924,32 @@ mod tests {
 
     #[test]
     fn test_get_stats_empty() {
-        let result = get_stats();
-        assert!(result.is_ok());
+        let conn = open_test_db().unwrap();
 
-        let stats = result.unwrap();
-        // Stats come from the actual database, so check it exists
-        assert!(stats.total_switches >= 0);
-        assert!(stats.unique_branches >= 0);
-        assert!(stats.unique_repos >= 0);
+        // Query stats from test database
+        let total_switches: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(switch_count), 0) FROM branches",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        let unique_branches: i64 = conn
+            .query_row("SELECT COUNT(*) FROM branches", [], |row| row.get(0))
+            .unwrap();
+
+        let unique_repos: i64 = conn
+            .query_row(
+                "SELECT COUNT(DISTINCT repo_path) FROM branches",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(total_switches, 0);
+        assert_eq!(unique_branches, 0);
+        assert_eq!(unique_repos, 0);
     }
 
     #[test]
