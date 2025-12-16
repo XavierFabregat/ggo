@@ -77,6 +77,28 @@ fn initialize_tables(conn: &Connection) -> Result<()> {
     )
     .context("Failed to create aliases table")?;
 
+    // Create indices for improved query performance
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_branches_repo_last_used
+         ON branches(repo_path, last_used DESC)",
+        [],
+    )
+    .context("Failed to create branches repo index")?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_branches_last_used
+         ON branches(last_used DESC)",
+        [],
+    )
+    .context("Failed to create branches last_used index")?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_aliases_branch
+         ON aliases(repo_path, branch_name)",
+        [],
+    )
+    .context("Failed to create aliases branch index")?;
+
     Ok(())
 }
 
