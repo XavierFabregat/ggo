@@ -1,7 +1,24 @@
 # Technical Debt & Issues
 
 > **Status:** Generated from code review on 2025-12-16
+> **Last Updated:** 2025-12-16
 > **Overall Assessment:** B+ (7.5/10) - Solid foundation, needs hardening before public release
+
+## 📊 Progress Summary
+
+**Completed:**
+- ✅ All 7 Quick Wins (QW1-QW7)
+- ✅ LT2: Branch Aliases (v0.2.0 feature)
+
+**In Progress:**
+- None
+
+**Remaining:**
+- 4 Critical issues (C1-C4)
+- 3 High priority (H1-H3)
+- 5 Medium priority (M1-M5)
+- 3 Low priority (L1-L3)
+- 9 Long-term improvements (LT1, LT3-LT10)
 
 ---
 
@@ -1540,10 +1557,15 @@ fn main() {
 
 These can be done in under 30 minutes each:
 
-### QW1: Add LICENSE File
-Create LICENSE file with chosen license (5 minutes)
+### ✅ QW1: Add LICENSE File (COMPLETED)
+**Status:** ✅ Done (Commit: ab3f70e)
+**Completed:** 2025-12-16
+Created LICENSE file with MIT license and updated Cargo.toml
 
-### QW2: Add .gitattributes
+### ✅ QW2: Add .gitattributes (COMPLETED)
+**Status:** ✅ Done (Commit: 587c36c)
+**Completed:** 2025-12-16
+Added .gitattributes for consistent line endings across platforms:
 ```
 # .gitattributes
 * text=auto eol=lf
@@ -1553,55 +1575,33 @@ Create LICENSE file with chosen license (5 minutes)
 Cargo.lock binary
 ```
 
-### QW3: Add Database Indices
-Already covered in H2, but worth emphasizing as quick win (30 minutes)
+### ✅ QW3: Add Database Indices (COMPLETED)
+**Status:** ✅ Done (Commit: 930a3ae)
+**Completed:** 2025-12-16
+Added 3 indices for optimized queries:
+- idx_branches_repo_last_used
+- idx_branches_last_used
+- idx_aliases_branch
 
-### QW4: Fix Version Display
-```rust
-// cli.rs
-#[derive(Parser)]
-#[command(name = "ggo")]
-#[command(version = env!("CARGO_PKG_VERSION"))]  // Show actual version
-#[command(about = "Smart Git Navigation Tool", long_about = None)]
-pub struct Cli {
-    // ...
-}
-```
+### ✅ QW4: Fix Version Display (COMPLETED)
+**Status:** ✅ Already working correctly
+**Completed:** N/A - No changes needed
+Clap's `#[command(version)]` already displays correct version from Cargo.toml
 
-### QW5: Add .editorconfig
-```ini
-# .editorconfig
-root = true
+### ✅ QW5: Add .editorconfig (COMPLETED)
+**Status:** ✅ Done (Commit: 20636bf)
+**Completed:** 2025-12-16
+Added .editorconfig for consistent coding styles across editors
 
-[*]
-charset = utf-8
-end_of_line = lf
-insert_final_newline = true
-trim_trailing_whitespace = true
+### ✅ QW6: Add Rust Toolchain File (COMPLETED)
+**Status:** ✅ Done (Commit: 23822fd)
+**Completed:** 2025-12-16
+Added rust-toolchain.toml specifying stable Rust channel
 
-[*.rs]
-indent_style = space
-indent_size = 4
-
-[*.toml]
-indent_style = space
-indent_size = 2
-
-[*.md]
-indent_style = space
-indent_size = 2
-trim_trailing_whitespace = false
-```
-
-### QW6: Add Rust Toolchain File
-```toml
-# rust-toolchain.toml
-[toolchain]
-channel = "stable"
-```
-
-### QW7: Improve Error Message Format
-Add emoji and better formatting to error messages (15 minutes)
+### ✅ QW7: Improve Error Message Format (COMPLETED)
+**Status:** ✅ Done (Commit: 2af1c44 + 59efce7)
+**Completed:** 2025-12-16
+Enhanced error messages with bullet points and actionable suggestions
 
 ---
 
@@ -1610,8 +1610,16 @@ Add emoji and better formatting to error messages (15 minutes)
 ### LT1: Repository Tracking (Phase 4)
 Implement multi-repository navigation from ROADMAP
 
-### LT2: Branch Aliases (Phase 5)
-Allow custom shortcuts for common branches
+### ✅ LT2: Branch Aliases (COMPLETED)
+**Status:** ✅ Done (Commit: 7f8e5e9 + 5 follow-ups)
+**Completed:** 2025-12-16
+Implemented comprehensive per-repo alias system with:
+- Create/update/delete/list aliases
+- Priority-based resolution (alias → exact → fuzzy)
+- Per-repo scoping with database isolation
+- 18 comprehensive tests
+- Integration with list command
+Version bumped to 0.2.0 to reflect this major feature
 
 ### LT3: Git Hooks Integration
 Auto-track on any branch switch
