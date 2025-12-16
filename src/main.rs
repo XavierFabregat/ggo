@@ -157,8 +157,11 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
 fn checkout_previous_branch() -> Result<()> {
     let repo_path = git::get_repo_root()?;
 
-    let previous_branch = storage::get_previous_branch(&repo_path)?
-        .ok_or_else(|| anyhow::anyhow!("No previous branch found\n\nYou haven't switched branches yet in this repository"))?;
+    let previous_branch = storage::get_previous_branch(&repo_path)?.ok_or_else(|| {
+        anyhow::anyhow!(
+            "No previous branch found\n\nYou haven't switched branches yet in this repository"
+        )
+    })?;
 
     // Save current branch before switching
     if let Ok(current_branch) = git::get_current_branch() {
