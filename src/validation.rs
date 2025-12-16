@@ -10,7 +10,10 @@ pub fn validate_branch_name(name: &str) -> Result<()> {
     }
 
     if name.len() > MAX_BRANCH_NAME_LENGTH {
-        bail!("Branch name too long (max {} characters)", MAX_BRANCH_NAME_LENGTH);
+        bail!(
+            "Branch name too long (max {} characters)",
+            MAX_BRANCH_NAME_LENGTH
+        );
     }
 
     // Check for dangerous characters that could cause issues
@@ -79,7 +82,10 @@ pub fn validate_repo_path(path: &str) -> Result<()> {
     }
 
     if path.len() > MAX_REPO_PATH_LENGTH {
-        bail!("Repository path too long (max {} characters)", MAX_REPO_PATH_LENGTH);
+        bail!(
+            "Repository path too long (max {} characters)",
+            MAX_REPO_PATH_LENGTH
+        );
     }
 
     // Check for null bytes
@@ -110,7 +116,10 @@ pub fn validate_repo_path(path: &str) -> Result<()> {
 /// Validate search pattern
 pub fn validate_pattern(pattern: &str) -> Result<()> {
     if pattern.len() > MAX_PATTERN_LENGTH {
-        bail!("Search pattern too long (max {} characters)", MAX_PATTERN_LENGTH);
+        bail!(
+            "Search pattern too long (max {} characters)",
+            MAX_PATTERN_LENGTH
+        );
     }
 
     // Check for null bytes
