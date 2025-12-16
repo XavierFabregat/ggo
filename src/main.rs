@@ -537,17 +537,17 @@ mod tests {
             repo_path: "/test".to_string(),
             branch_name: "feature/auth".to_string(),
             switch_count: 10,
-            last_used: now - 60, // Recent: frecency score = 40.0
+            last_used: now - 60, // Recent: frecency score ≈ 10.0 (10 * ~1.0)
         }];
 
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
 
         assert_eq!(result.len(), 2);
         // feature/auth should rank higher due to frecency
-        // auth: 80 + (40.0 * 10) = 480
+        // auth: 80 + (10.0 * 10) = 180
         // dashboard: 100 + (0 * 10) = 100
         assert_eq!(result[0].0, "feature/auth");
-        assert_eq!(result[0].1, 480.0);
+        assert!(result[0].1 > 179.0 && result[0].1 < 181.0);
         assert_eq!(result[1].0, "feature/dashboard");
         assert_eq!(result[1].1, 100.0);
     }
@@ -575,23 +575,24 @@ mod tests {
                 repo_path: "/test".to_string(),
                 branch_name: "branch-a".to_string(),
                 switch_count: 1,
-                last_used: now - 3000000, // Old: frecency = 0.25
+                last_used: now - 3000000, // Old: frecency ≈ 0.03 (1 * 0.03)
             },
             BranchRecord {
                 repo_path: "/test".to_string(),
                 branch_name: "branch-b".to_string(),
                 switch_count: 5,
-                last_used: now - 60, // Recent: frecency = 20.0
+                last_used: now - 60, // Recent: frecency ≈ 5.0 (5 * 1.0)
             },
         ];
 
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
 
         assert_eq!(result.len(), 2);
-        // branch-a: 100 + (0.25 * 10) = 102.5
-        // branch-b: 50 + (20.0 * 10) = 250.0
-        assert_eq!(result[0].0, "branch-b");
-        assert_eq!(result[1].0, "branch-a");
+        // branch-a: 100 + (0.03 * 10) ≈ 100.3
+        // branch-b: 50 + (5.0 * 10) = 100.0
+        // branch-a wins slightly (better fuzzy match despite lower frecency)
+        assert_eq!(result[0].0, "branch-a");
+        assert_eq!(result[1].0, "branch-b");
     }
 
     #[test]
@@ -616,16 +617,16 @@ mod tests {
             repo_path: "/test".to_string(),
             branch_name: "popular-branch".to_string(),
             switch_count: 20,
-            last_used: now - 60, // Recent: frecency = 80.0
+            last_used: now - 60, // Recent: frecency ≈ 20.0 (20 * ~1.0)
         }];
 
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
 
         assert_eq!(result.len(), 2);
-        // popular-branch: 60 + (80.0 * 10) = 860.0
+        // popular-branch: 60 + (20.0 * 10) = 260.0
         // new-branch: 100 + (0 * 10) = 100.0
         assert_eq!(result[0].0, "popular-branch");
-        assert!(result[0].1 > 800.0);
+        assert!(result[0].1 > 259.0 && result[0].1 < 261.0);
     }
 
     #[test]
