@@ -53,10 +53,3 @@ pub mod validation {
     /// Maximum length for repository paths
     pub const MAX_REPO_PATH_LENGTH: usize = 4096;
 }
-
-/// Database schema version
-pub mod database {
-    /// Current database schema version
-    /// Increment this when making schema changes
-    pub const SCHEMA_VERSION: i32 = 2;
-}

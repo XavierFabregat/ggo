@@ -25,8 +25,8 @@ cargo test storage            # Module-specific tests
 cargo test --test '*'         # Integration tests only
 
 # Linting and formatting
-cargo clippy                  # Lint (should have no warnings)
-cargo fmt                     # Format code
+cargo clippy --all-targets --all-features -- -D warnings  # Lint (should have no warnings)
+cargo fmt                                                 # Format code
 ```
 
 ### Testing the Binary
@@ -240,12 +240,24 @@ Reference TECHNICAL_DEBT.md issue codes (H1, C3, etc.) when addressing tracked i
 **Pre-Commit Checklist (REQUIRED):**
 Before committing any changes, ensure all of the following pass:
 ```bash
-cargo test                    # All tests must pass
-cargo fmt -- --check          # Code must be formatted
-cargo clippy                  # No clippy warnings allowed
+cargo test                                            # All tests must pass
+cargo fmt -- --check                                  # Code must be formatted
+cargo clippy --all-targets --all-features -- -D warnings  # No clippy warnings allowed
 ```
 
 If any of these fail, fix the issues before committing.
+
+**Automated Pre-Commit Hooks:**
+To automatically run these checks before every commit, you can use `cargo-husky`:
+```bash
+# Add to Cargo.toml [dev-dependencies]
+cargo-husky = "1"
+
+# Or set up manually with git hooks
+# Create .git/hooks/pre-commit and make it executable
+```
+
+See https://github.com/rhysd/cargo-husky for setup instructions.
 
 ## Notes for AI Assistants
 
@@ -253,7 +265,7 @@ If any of these fail, fix the issues before committing.
 Before committing, these checks MUST all pass:
 - `cargo test` - All tests must pass
 - `cargo fmt -- --check` - Code must be properly formatted
-- `cargo clippy` - No clippy warnings allowed
+- `cargo clippy --all-targets --all-features -- -D warnings` - No clippy warnings allowed
 
 **When Making Changes:**
 1. Run all pre-commit checks before committing (see above)
