@@ -267,7 +267,10 @@ fn handle_cleanup_command(
 
     // Cleanup old records (always run if a custom age is specified, or if --optimize is used)
     if older_than_days < 365 || optimize {
-        println!("Cleaning up branches older than {} days...", older_than_days);
+        println!(
+            "Cleaning up branches older than {} days...",
+            older_than_days
+        );
         let deleted = storage::cleanup_old_records(older_than_days)?;
         println!("Removed {} old branch records", deleted);
     }
