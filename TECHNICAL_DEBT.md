@@ -9,17 +9,18 @@
 **Completed:**
 - ✅ **All 4 Critical Issues (C1-C4)**
 - ✅ **All 3 High Priority (H1-H3)**
+- ✅ **2 of 5 Medium Priority (M2, M3)**
 - ✅ **All 7 Quick Wins (QW1-QW7)**
 - ✅ LT2: Branch Aliases (v0.2.0 feature)
 
-**Total:** 15 items completed
+**Total:** 17 items completed
 
 **In Progress:**
 - None
 
 **Remaining:**
-- 5 Medium priority (M1-M5)
-- 3 Low priority (L1-L3)
+- 3 Medium priority (M1, M4, M5)
+- 2 Low priority (L2, L3) - L1 completed
 - 9 Long-term improvements (LT1, LT3-LT10)
 
 ---
@@ -1015,7 +1016,10 @@ pub fn calculate_score_advanced(
 
 ---
 
-### M2: Duplicate Code in Tests
+### ✅ M2: Duplicate Code in Tests (COMPLETED)
+
+**Status:** ✅ Done (Commit: 4c75243)
+**Completed:** 2025-12-16
 
 **Location:** `storage.rs:260-378`, `git.rs:122-293`
 
@@ -1114,7 +1118,10 @@ mod tests {
 
 ---
 
-### M3: Hardcoded Constants
+### ✅ M3: Hardcoded Constants (COMPLETED)
+
+**Status:** ✅ Done (Commit: 1eab390)
+**Completed:** 2025-12-16
 
 **Location:** Multiple files
 

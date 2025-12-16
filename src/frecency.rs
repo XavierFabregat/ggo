@@ -1,3 +1,4 @@
+use crate::constants::frecency::*;
 use crate::storage::BranchRecord;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -5,12 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 ///
 /// Frecency = frequency × recency_weight
 ///
-/// The recency weight decays over time:
-/// - Used in last hour: weight = 4.0
-/// - Used in last day: weight = 2.0
-/// - Used in last week: weight = 1.0
-/// - Used in last month: weight = 0.5
-/// - Older: weight = 0.25
+/// The recency weight decays over time (see constants::frecency for values)
 pub fn calculate_score(record: &BranchRecord) -> f64 {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -19,21 +15,16 @@ pub fn calculate_score(record: &BranchRecord) -> f64 {
 
     let age_seconds = now - record.last_used;
 
-    let recency_weight = if age_seconds < 3600 {
-        // Last hour
-        4.0
-    } else if age_seconds < 86400 {
-        // Last day
-        2.0
-    } else if age_seconds < 604800 {
-        // Last week
-        1.0
-    } else if age_seconds < 2592000 {
-        // Last month
-        0.5
+    let recency_weight = if age_seconds < HOUR_SECONDS {
+        HOUR_WEIGHT
+    } else if age_seconds < DAY_SECONDS {
+        DAY_WEIGHT
+    } else if age_seconds < WEEK_SECONDS {
+        WEEK_WEIGHT
+    } else if age_seconds < MONTH_SECONDS {
+        MONTH_WEIGHT
     } else {
-        // Older
-        0.25
+        OLD_WEIGHT
     };
 
     record.switch_count as f64 * recency_weight
@@ -107,20 +98,20 @@ pub fn format_relative_time(timestamp: i64) -> String {
 
     if age_seconds < 60 {
         "just now".to_string()
-    } else if age_seconds < 3600 {
+    } else if age_seconds < HOUR_SECONDS {
         let mins = age_seconds / 60;
         format!("{}m ago", mins)
-    } else if age_seconds < 86400 {
-        let hours = age_seconds / 3600;
+    } else if age_seconds < DAY_SECONDS {
+        let hours = age_seconds / HOUR_SECONDS;
         format!("{}h ago", hours)
-    } else if age_seconds < 604800 {
-        let days = age_seconds / 86400;
+    } else if age_seconds < WEEK_SECONDS {
+        let days = age_seconds / DAY_SECONDS;
         format!("{}d ago", days)
-    } else if age_seconds < 2592000 {
-        let weeks = age_seconds / 604800;
+    } else if age_seconds < MONTH_SECONDS {
+        let weeks = age_seconds / WEEK_SECONDS;
         format!("{}w ago", weeks)
     } else {
-        let months = age_seconds / 2592000;
+        let months = age_seconds / MONTH_SECONDS;
         format!("{}mo ago", months)
     }
 }

@@ -1,4 +1,5 @@
 mod cli;
+mod constants;
 mod frecency;
 mod git;
 mod interactive;
@@ -10,6 +11,7 @@ use anyhow::{bail, Context, Result};
 use clap::Parser;
 
 use cli::{Cli, Commands};
+use constants::scoring::{AUTO_SELECT_THRESHOLD, FRECENCY_MULTIPLIER};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -307,8 +309,8 @@ fn combine_fuzzy_and_frecency_scores(
             let frecency_score = frecency_map.get(m.branch.as_str()).copied().unwrap_or(0.0);
 
             // Combine scores: fuzzy match quality + (frecency * weight)
-            // Frecency gets a 10x multiplier to give it significant weight
-            let combined_score = fuzzy_score + (frecency_score * 10.0);
+            // Frecency gets a multiplier to give it significant weight
+            let combined_score = fuzzy_score + (frecency_score * FRECENCY_MULTIPLIER);
 
             (m.branch.clone(), combined_score)
         })
@@ -420,12 +422,12 @@ fn find_and_checkout_branch(
         let top_score = ranked[0].1;
         let second_score = ranked[1].1;
 
-        // If top score is 2x or more than second, auto-select
+        // If top score is above threshold compared to second, auto-select
         // Handle edge case where second_score is 0
         let should_auto_select = if second_score == 0.0 {
             true
         } else {
-            top_score / second_score >= 2.0
+            top_score / second_score >= AUTO_SELECT_THRESHOLD
         };
 
         if should_auto_select {

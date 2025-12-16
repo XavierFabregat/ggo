@@ -1,14 +1,19 @@
 use anyhow::{bail, Result};
 use std::path::Path;
 
+use crate::constants::validation::*;
+
 /// Validate that a branch name is safe and valid according to git rules
 pub fn validate_branch_name(name: &str) -> Result<()> {
     if name.is_empty() {
         bail!("Branch name cannot be empty");
     }
 
-    if name.len() > 255 {
-        bail!("Branch name too long (max 255 characters)");
+    if name.len() > MAX_BRANCH_NAME_LENGTH {
+        bail!(
+            "Branch name too long (max {} characters)",
+            MAX_BRANCH_NAME_LENGTH
+        );
     }
 
     // Check for dangerous characters that could cause issues
@@ -76,8 +81,11 @@ pub fn validate_repo_path(path: &str) -> Result<()> {
         bail!("Repository path cannot be empty");
     }
 
-    if path.len() > 4096 {
-        bail!("Repository path too long (max 4096 characters)");
+    if path.len() > MAX_REPO_PATH_LENGTH {
+        bail!(
+            "Repository path too long (max {} characters)",
+            MAX_REPO_PATH_LENGTH
+        );
     }
 
     // Check for null bytes
@@ -107,8 +115,11 @@ pub fn validate_repo_path(path: &str) -> Result<()> {
 
 /// Validate search pattern
 pub fn validate_pattern(pattern: &str) -> Result<()> {
-    if pattern.len() > 255 {
-        bail!("Search pattern too long (max 255 characters)");
+    if pattern.len() > MAX_PATTERN_LENGTH {
+        bail!(
+            "Search pattern too long (max {} characters)",
+            MAX_PATTERN_LENGTH
+        );
     }
 
     // Check for null bytes
@@ -129,8 +140,8 @@ pub fn validate_alias_name(alias: &str) -> Result<()> {
         bail!("Alias name cannot be empty");
     }
 
-    if alias.len() > 50 {
-        bail!("Alias name too long (max 50 characters)");
+    if alias.len() > MAX_ALIAS_LENGTH {
+        bail!("Alias name too long (max {} characters)", MAX_ALIAS_LENGTH);
     }
 
     if alias.starts_with('-') {
