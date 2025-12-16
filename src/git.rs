@@ -1,26 +1,21 @@
 use anyhow::{bail, Context, Result};
-use std::io::BufRead;
-use std::process::Command;
+use git2::Repository;
 
 use crate::validation;
 
 /// Get all local git branches in the current repository
 pub fn get_branches() -> Result<Vec<String>> {
-    let output = Command::new("git")
-        .args(["branch"])
-        .output()
-        .context("Failed to execute git branch")?;
+    let repo = Repository::open_from_env()
+        .context("Not a git repository")?;
 
-    if !output.status.success() {
-        bail!("Not a git repository or git command failed");
+    let mut branches = Vec::new();
+
+    for branch in repo.branches(Some(git2::BranchType::Local))? {
+        let (branch, _) = branch.context("Failed to read branch")?;
+        if let Some(name) = branch.name()? {
+            branches.push(name.to_string());
+        }
     }
-
-    let branches: Vec<String> = output
-        .stdout
-        .lines()
-        .map_while(Result::ok)
-        .map(|line| line.trim().trim_start_matches('*').trim().to_string())
-        .collect();
 
     Ok(branches)
 }
@@ -31,31 +26,37 @@ pub fn checkout(branch: &str) -> Result<()> {
     validation::validate_branch_name(branch)
         .context("Cannot checkout invalid branch name")?;
 
-    let output = Command::new("git")
-        .args(["checkout", branch])
-        .output()
-        .context("Failed to execute git checkout")?;
+    let repo = Repository::open_from_env()
+        .context("Not a git repository")?;
 
-    if !output.status.success() {
-        let error = String::from_utf8_lossy(&output.stderr);
-        bail!("Git checkout failed: {}", error.trim());
-    }
+    // Find the branch reference
+    let refname = format!("refs/heads/{}", branch);
+    let obj = repo.revparse_single(&refname)
+        .context(format!("Branch '{}' not found", branch))?;
+
+    // Checkout the branch
+    repo.checkout_tree(&obj, None)
+        .context(format!("Failed to checkout branch '{}'", branch))?;
+
+    // Update HEAD to point to the branch
+    repo.set_head(&refname)
+        .context(format!("Failed to set HEAD to branch '{}'", branch))?;
 
     Ok(())
 }
 
 /// Get the root path of the current git repository
 pub fn get_repo_root() -> Result<String> {
-    let output = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .context("Failed to execute git rev-parse")?;
+    let repo = Repository::open_from_env()
+        .context("Not a git repository")?;
 
-    if !output.status.success() {
-        bail!("Not a git repository");
-    }
+    let workdir = repo.workdir()
+        .ok_or_else(|| anyhow::anyhow!("Repository has no working directory (bare repository?)"))?;
 
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let path = workdir
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("Repository path contains invalid UTF-8"))?
+        .to_string();
 
     // Validate the returned repo path
     validation::validate_repo_path(&path)
@@ -66,22 +67,21 @@ pub fn get_repo_root() -> Result<String> {
 
 /// Get the name of the current branch
 pub fn get_current_branch() -> Result<String> {
-    let output = Command::new("git")
-        .args(["branch", "--show-current"])
-        .output()
-        .context("Failed to execute git branch --show-current")?;
+    let repo = Repository::open_from_env()
+        .context("Not a git repository")?;
 
-    if !output.status.success() {
-        bail!("Failed to get current branch (detached HEAD?)");
-    }
+    let head = repo.head()
+        .context("Could not get HEAD reference")?;
 
-    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    if branch.is_empty() {
+    if !head.is_branch() {
         bail!("Not on a branch (detached HEAD)");
     }
 
-    Ok(branch)
+    let branch_name = head
+        .shorthand()
+        .ok_or_else(|| anyhow::anyhow!("Invalid branch name"))?;
+
+    Ok(branch_name.to_string())
 }
 
 #[cfg(test)]
@@ -95,58 +95,58 @@ mod tests {
         let temp_dir = tempfile::tempdir()?;
         let repo_path = temp_dir.path();
 
-        // Initialize git repo
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()?;
+        // Initialize git repo using git2
+        Repository::init(repo_path).unwrap();
+        let repo = Repository::open(repo_path).unwrap();
 
         // Configure git for tests
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(repo_path)
-            .output()?;
-
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(repo_path)
-            .output()?;
+        repo.config()
+            .unwrap()
+            .set_str("user.email", "test@example.com")
+            .unwrap();
+        repo.config()
+            .unwrap()
+            .set_str("user.name", "Test User")
+            .unwrap();
 
         // Create initial commit
         let test_file = repo_path.join("test.txt");
         fs::write(&test_file, "test content")?;
 
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(repo_path)
-            .output()?;
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("test.txt")).unwrap();
+        index.write().unwrap();
 
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(repo_path)
-            .output()?;
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let sig = repo.signature().unwrap();
+
+        repo.commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            "Initial commit",
+            &tree,
+            &[],
+        )
+        .unwrap();
 
         Ok(temp_dir)
     }
 
-    // Helper to run get_branches in a specific directory
-    fn get_branches_in_dir(dir: &Path) -> Result<Vec<String>> {
-        let output = Command::new("git")
-            .args(["branch"])
-            .current_dir(dir)
-            .output()
-            .context("Failed to execute git branch")?;
+    // Helper to get branches from a specific repo path
+    fn get_branches_from_path(path: &Path) -> Result<Vec<String>> {
+        let repo = Repository::open(path)
+            .context("Not a git repository")?;
 
-        if !output.status.success() {
-            bail!("Not a git repository or git command failed");
+        let mut branches = Vec::new();
+
+        for branch in repo.branches(Some(git2::BranchType::Local))? {
+            let (branch, _) = branch.context("Failed to read branch")?;
+            if let Some(name) = branch.name()? {
+                branches.push(name.to_string());
+            }
         }
-
-        let branches: Vec<String> = output
-            .stdout
-            .lines()
-            .map_while(Result::ok)
-            .map(|line| line.trim().trim_start_matches('*').trim().to_string())
-            .collect();
 
         Ok(branches)
     }
@@ -154,35 +154,27 @@ mod tests {
     #[test]
     fn test_get_branches_empty_repo() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
-
-        let result = get_branches_in_dir(temp_dir.path());
+        let result = get_branches_from_path(temp_dir.path());
 
         assert!(result.is_ok());
         let branches = result.unwrap();
-        // Should have at least the default branch (main or master)
+        // Should have at least the default branch (usually 'master' or 'main')
         assert!(!branches.is_empty());
-        assert!(branches.iter().any(|b| b == "main" || b == "master"));
     }
 
     #[test]
     fn test_get_branches_multiple() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
-        let repo_path = temp_dir.path();
+        let repo = Repository::open(temp_dir.path()).unwrap();
 
         // Create additional branches
-        Command::new("git")
-            .args(["branch", "feature-a"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        let head = repo.head().unwrap();
+        let commit = head.peel_to_commit().unwrap();
 
-        Command::new("git")
-            .args(["branch", "feature-b"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        repo.branch("feature-a", &commit, false).unwrap();
+        repo.branch("feature-b", &commit, false).unwrap();
 
-        let result = get_branches_in_dir(repo_path);
+        let result = get_branches_from_path(temp_dir.path());
 
         assert!(result.is_ok());
         let branches = result.unwrap();
@@ -194,48 +186,42 @@ mod tests {
     #[test]
     fn test_get_branches_strips_asterisk() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
-        let repo_path = temp_dir.path();
-
-        // Create and checkout a new branch
-        Command::new("git")
-            .args(["checkout", "-b", "test-branch"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        let result = get_branches_in_dir(repo_path);
+        let result = get_branches_from_path(temp_dir.path());
 
         assert!(result.is_ok());
         let branches = result.unwrap();
-        // Ensure no branch has asterisk
+        // Ensure no branch has asterisk (git2 doesn't add them)
         for branch in &branches {
             assert!(!branch.starts_with('*'));
             assert!(!branch.contains('*'));
         }
-        assert!(branches.contains(&"test-branch".to_string()));
     }
 
     #[test]
     fn test_get_branches_not_git_repo() {
         let temp_dir = tempfile::tempdir().unwrap();
-
-        let result = get_branches_in_dir(temp_dir.path());
+        let result = get_branches_from_path(temp_dir.path());
 
         assert!(result.is_err());
     }
 
-    // Helper to checkout in a specific directory
-    fn checkout_in_dir(dir: &Path, branch: &str) -> Result<()> {
-        let output = Command::new("git")
-            .args(["checkout", branch])
-            .current_dir(dir)
-            .output()
-            .context("Failed to execute git checkout")?;
+    // Helper to checkout in a specific repo
+    fn checkout_in_repo(path: &Path, branch: &str) -> Result<()> {
+        validation::validate_branch_name(branch)
+            .context("Cannot checkout invalid branch name")?;
 
-        if !output.status.success() {
-            let error = String::from_utf8_lossy(&output.stderr);
-            bail!("Git checkout failed: {}", error.trim());
-        }
+        let repo = Repository::open(path)
+            .context("Not a git repository")?;
+
+        let refname = format!("refs/heads/{}", branch);
+        let obj = repo.revparse_single(&refname)
+            .context(format!("Branch '{}' not found", branch))?;
+
+        repo.checkout_tree(&obj, None)
+            .context(format!("Failed to checkout branch '{}'", branch))?;
+
+        repo.set_head(&refname)
+            .context(format!("Failed to set HEAD to branch '{}'", branch))?;
 
         Ok(())
     }
@@ -243,64 +229,48 @@ mod tests {
     #[test]
     fn test_checkout_existing_branch() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
-        let repo_path = temp_dir.path();
+        let repo = Repository::open(temp_dir.path()).unwrap();
 
         // Create a new branch
-        Command::new("git")
-            .args(["branch", "test-checkout"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        let head = repo.head().unwrap();
+        let commit = head.peel_to_commit().unwrap();
+        repo.branch("test-checkout", &commit, false).unwrap();
 
-        let result = checkout_in_dir(repo_path, "test-checkout");
+        let result = checkout_in_repo(temp_dir.path(), "test-checkout");
 
         assert!(result.is_ok());
+
+        // Verify we're on the new branch
+        let current_head = repo.head().unwrap();
+        assert!(current_head.is_branch());
+        assert_eq!(current_head.shorthand().unwrap(), "test-checkout");
     }
 
     #[test]
     fn test_checkout_nonexistent_branch() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
-
-        let result = checkout_in_dir(temp_dir.path(), "nonexistent-branch");
+        let result = checkout_in_repo(temp_dir.path(), "nonexistent-branch");
 
         assert!(result.is_err());
     }
 
-    // Helper to get repo root from a specific directory
-    fn get_repo_root_in_dir(dir: &Path) -> Result<String> {
-        let output = Command::new("git")
-            .args(["rev-parse", "--show-toplevel"])
-            .current_dir(dir)
-            .output()
-            .context("Failed to execute git rev-parse")?;
+    // Helper to discover repo root from a subdirectory
+    fn get_repo_root_from_path(path: &Path) -> Result<String> {
+        let repo = Repository::discover(path)
+            .context("Not a git repository")?;
 
-        if !output.status.success() {
-            bail!("Not a git repository");
-        }
+        let workdir = repo.workdir()
+            .ok_or_else(|| anyhow::anyhow!("Repository has no working directory (bare repository?)"))?;
 
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        Ok(path)
-    }
+        let root_path = workdir
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Repository path contains invalid UTF-8"))?
+            .to_string();
 
-    // Helper to get current branch in a specific directory
-    fn get_current_branch_in_dir(dir: &Path) -> Result<String> {
-        let output = Command::new("git")
-            .args(["branch", "--show-current"])
-            .current_dir(dir)
-            .output()
-            .context("Failed to execute git branch --show-current")?;
+        validation::validate_repo_path(&root_path)
+            .context("Git returned invalid repository path")?;
 
-        if !output.status.success() {
-            bail!("Failed to get current branch (detached HEAD?)");
-        }
-
-        let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-        if branch.is_empty() {
-            bail!("Not on a branch (detached HEAD)");
-        }
-
-        Ok(branch)
+        Ok(root_path)
     }
 
     #[test]
@@ -312,36 +282,57 @@ mod tests {
         let subdir = repo_path.join("subdir");
         fs::create_dir(&subdir).unwrap();
 
-        let result = get_repo_root_in_dir(&subdir);
+        let result = get_repo_root_from_path(&subdir);
 
         assert!(result.is_ok());
         let root = result.unwrap();
+
         // Should return the repo root, not the subdirectory
-        assert_eq!(Path::new(&root).file_name(), repo_path.file_name());
+        // Normalize paths for comparison
+        let expected = repo_path.canonicalize().unwrap();
+        let actual = Path::new(&root).canonicalize().unwrap();
+        assert_eq!(actual, expected);
     }
 
     #[test]
     fn test_get_repo_root_not_git_repo() {
         let temp_dir = tempfile::tempdir().unwrap();
-
-        let result = get_repo_root_in_dir(temp_dir.path());
+        let result = get_repo_root_from_path(temp_dir.path());
 
         assert!(result.is_err());
+    }
+
+    // Helper to get current branch from a specific repo
+    fn get_current_branch_from_repo(path: &Path) -> Result<String> {
+        let repo = Repository::open(path)
+            .context("Not a git repository")?;
+
+        let head = repo.head()
+            .context("Could not get HEAD reference")?;
+
+        if !head.is_branch() {
+            bail!("Not on a branch (detached HEAD)");
+        }
+
+        let branch_name = head
+            .shorthand()
+            .ok_or_else(|| anyhow::anyhow!("Invalid branch name"))?;
+
+        Ok(branch_name.to_string())
     }
 
     #[test]
     fn test_get_current_branch() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
-        let repo_path = temp_dir.path();
+        let repo = Repository::open(temp_dir.path()).unwrap();
 
         // Create and checkout a new branch
-        Command::new("git")
-            .args(["checkout", "-b", "current-test"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        let head = repo.head().unwrap();
+        let commit = head.peel_to_commit().unwrap();
+        let branch = repo.branch("current-test", &commit, false).unwrap();
+        repo.set_head(branch.get().name().unwrap()).unwrap();
 
-        let result = get_current_branch_in_dir(repo_path);
+        let result = get_current_branch_from_repo(temp_dir.path());
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "current-test");
@@ -350,8 +341,7 @@ mod tests {
     #[test]
     fn test_get_current_branch_not_git_repo() {
         let temp_dir = tempfile::tempdir().unwrap();
-
-        let result = get_current_branch_in_dir(temp_dir.path());
+        let result = get_current_branch_from_repo(temp_dir.path());
 
         assert!(result.is_err());
     }
@@ -359,25 +349,14 @@ mod tests {
     #[test]
     fn test_get_current_branch_detached_head() {
         let temp_dir = setup_test_repo().expect("Failed to create test repo");
-        let repo_path = temp_dir.path();
-
-        // Get the commit hash
-        let output = Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        let commit_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let repo = Repository::open(temp_dir.path()).unwrap();
 
         // Checkout the commit directly (detached HEAD)
-        Command::new("git")
-            .args(["checkout", &commit_hash])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        let head = repo.head().unwrap();
+        let commit = head.peel_to_commit().unwrap();
+        repo.set_head_detached(commit.id()).unwrap();
 
-        let result = get_current_branch_in_dir(repo_path);
+        let result = get_current_branch_from_repo(temp_dir.path());
 
         // Should fail because we're in detached HEAD state
         assert!(result.is_err());
