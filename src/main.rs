@@ -8,17 +8,36 @@ mod storage;
 use anyhow::{bail, Result};
 use clap::Parser;
 
-use cli::Cli;
+use cli::{Cli, Commands};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Handle subcommands first
+    if let Some(command) = cli.command {
+        match command {
+            Commands::Alias {
+                alias,
+                branch,
+                list,
+                remove,
+            } => {
+                handle_alias_command(alias.as_deref(), branch.as_deref(), list, remove)?;
+                return Ok(());
+            }
+        }
+    }
 
     if cli.stats {
         show_stats()?;
         return Ok(());
     }
 
-    let pattern = cli.pattern.as_deref().unwrap_or("");
+    // Pattern is required if no subcommand and no stats
+    let pattern = cli
+        .pattern
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Pattern argument is required"))?;
 
     // Handle the special '-' pattern to go back to previous branch
     if pattern == "-" {
@@ -110,7 +129,16 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
         } else {
             String::new()
         };
-        println!("  {} {}{}", marker, branch, score_display);
+
+        // Get aliases for this branch
+        let aliases = storage::get_aliases_for_branch(&repo_path, branch).unwrap_or_default();
+        let alias_display = if !aliases.is_empty() {
+            format!(" [alias: {}]", aliases.join(", "))
+        } else {
+            String::new()
+        };
+
+        println!("  {} {}{}{}", marker, branch, score_display, alias_display);
     }
 
     if ranked.len() > 1 {
@@ -143,6 +171,91 @@ fn checkout_previous_branch() -> Result<()> {
 
     println!("Switched to branch '{}'", previous_branch);
     Ok(())
+}
+
+/// Handle alias subcommand operations
+fn handle_alias_command(
+    alias: Option<&str>,
+    branch: Option<&str>,
+    list: bool,
+    remove: bool,
+) -> Result<()> {
+    let repo_path = git::get_repo_root()?;
+
+    // Handle --list flag
+    if list {
+        let aliases = storage::list_aliases(&repo_path)?;
+        if aliases.is_empty() {
+            println!("No aliases defined for this repository");
+        } else {
+            println!("Aliases for this repository:\n");
+            for a in aliases {
+                println!("  {} → {}", a.alias, a.branch_name);
+            }
+        }
+        return Ok(());
+    }
+
+    // Alias is required for other operations
+    let alias = alias.ok_or_else(|| anyhow::anyhow!("Alias name is required"))?;
+
+    // Handle --remove flag
+    if remove {
+        storage::delete_alias(&repo_path, alias)?;
+        println!("Removed alias '{}'", alias);
+        return Ok(());
+    }
+
+    // If branch is provided, create/update alias
+    if let Some(branch_name) = branch {
+        // Validate alias name
+        if !is_valid_alias(alias) {
+            bail!(
+                "Invalid alias name '{}'. Alias must contain only alphanumeric characters, dash, or underscore, and cannot start with '-'",
+                alias
+            );
+        }
+
+        // Validate that branch exists
+        let branches = git::get_branches()?;
+        if !branches.contains(&branch_name.to_string()) {
+            bail!("Branch '{}' does not exist in this repository", branch_name);
+        }
+
+        // Create/update the alias
+        storage::create_alias(&repo_path, alias, branch_name)?;
+        println!("Created alias '{}' → '{}'", alias, branch_name);
+        return Ok(());
+    }
+
+    // No branch provided: show what alias points to
+    match storage::get_alias(&repo_path, alias)? {
+        Some(branch_name) => {
+            println!("{} → {}", alias, branch_name);
+        }
+        None => {
+            println!("Alias '{}' not found", alias);
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate alias name
+fn is_valid_alias(alias: &str) -> bool {
+    if alias.is_empty() || alias.starts_with('-') {
+        return false;
+    }
+
+    // Check if alias is a reserved word
+    if matches!(alias, "stats" | "alias") {
+        return false;
+    }
+
+    // Allow alphanumeric, dash, and underscore
+    alias
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
 }
 
 /// Combine fuzzy match scores with frecency scores for final ranking
@@ -189,6 +302,36 @@ fn find_and_checkout_branch(
     let branches = git::get_branches()?;
     let repo_path = git::get_repo_root().unwrap_or_default();
     let records = storage::get_branch_records(&repo_path).unwrap_or_default();
+
+    // Check if pattern is an exact alias match (highest priority)
+    if let Ok(Some(branch_name)) = storage::get_alias(&repo_path, pattern) {
+        // Verify the aliased branch still exists
+        if branches.contains(&branch_name) {
+            println!("Using alias '{}' → '{}'", pattern, branch_name);
+            // Checkout the aliased branch directly
+            let current_branch = git::get_current_branch().ok();
+            if let Some(ref current) = current_branch {
+                if current != &branch_name {
+                    if let Err(e) = storage::save_previous_branch(&repo_path, current) {
+                        eprintln!("Warning: Failed to save current branch: {}", e);
+                    }
+                }
+            }
+
+            git::checkout(&branch_name)?;
+
+            if let Err(e) = storage::record_checkout(&repo_path, &branch_name) {
+                eprintln!("Warning: Failed to record checkout: {}", e);
+            }
+
+            return Ok(branch_name);
+        } else {
+            eprintln!(
+                "Warning: Alias '{}' points to non-existent branch '{}'. Falling back to pattern matching.",
+                pattern, branch_name
+            );
+        }
+    }
 
     let ranked = if use_fuzzy {
         // Use fuzzy matching and combine with frecency

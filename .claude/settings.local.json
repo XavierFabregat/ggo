@@ -5,7 +5,15 @@
       "Bash(./target/debug/ggo:*)",
       "Bash(git checkout:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(tokei:*)",
+      "Bash(find:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo install:*)",
+      "Bash(ggo alias:*)",
+      "Bash(ggo --list:*)",
+      "Bash(ggo fa:*)"
     ],
     "deny": [],
     "ask": []
