@@ -9,12 +9,25 @@ mod validation;
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
+use tracing::{debug, info, warn};
 
 use cli::{Cli, Commands};
 use constants::scoring::{AUTO_SELECT_THRESHOLD, FRECENCY_MULTIPLIER};
 
 fn main() -> Result<()> {
+    // Initialize tracing for structured logging
+    // Set RUST_LOG=debug for verbose output, or RUST_LOG=trace for very verbose
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+        )
+        .with_target(false)
+        .with_level(true)
+        .init();
+
     let cli = Cli::parse();
+    debug!("CLI arguments: {:?}", cli);
 
     // Handle version flag
     if cli.version {
@@ -366,8 +379,10 @@ fn find_and_checkout_branch(
             if let Some(ref current) = current_branch {
                 if current != &branch_name {
                     if let Err(e) = storage::save_previous_branch(&repo_path, current) {
-                        eprintln!("⚠️  Warning: Could not save previous branch: {}", e);
-                        eprintln!("   The 'ggo -' command may not work correctly.");
+                        warn!("Failed to save previous branch: {}", e);
+                        eprintln!("⚠️  Warning: 'ggo -' may not work correctly");
+                    } else {
+                        debug!("Saved previous branch: {}", current);
                     }
                 }
             }

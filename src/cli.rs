@@ -25,7 +25,7 @@ use clap::{Parser, Subcommand};
 ///     ggo learns from your usage patterns. The more you use a branch,
 ///     the higher it ranks in search results. Fuzzy matching is enabled
 ///     by default for more forgiving pattern matching.
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(name = "ggo")]
 #[command(disable_version_flag = true)]
 #[command(about = "Smart Git Navigation Tool", long_about = None)]
