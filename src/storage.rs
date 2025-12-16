@@ -3,6 +3,9 @@ use rusqlite::Connection;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Current database schema version
+const CURRENT_SCHEMA_VERSION: i32 = 2;
+
 /// Branch usage record from the database
 #[derive(Debug, Clone)]
 pub struct BranchRecord {
@@ -49,55 +52,118 @@ pub fn open_db() -> Result<Connection> {
     Ok(conn)
 }
 
-/// Initialize database tables
+/// Initialize database tables and run migrations
 fn initialize_tables(conn: &Connection) -> Result<()> {
-    // Create tables if they don't exist
+    // Create schema version table first
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS branches (
-            id INTEGER PRIMARY KEY,
-            repo_path TEXT NOT NULL,
-            branch_name TEXT NOT NULL,
-            switch_count INTEGER DEFAULT 1,
-            last_used INTEGER NOT NULL,
-            UNIQUE(repo_path, branch_name)
+        "CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER PRIMARY KEY,
+            applied_at INTEGER NOT NULL
         )",
         [],
     )
-    .context("Failed to create branches table")?;
+    .context("Failed to create schema_version table")?;
 
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS aliases (
-            repo_path TEXT NOT NULL,
-            alias TEXT NOT NULL,
-            branch_name TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            PRIMARY KEY (repo_path, alias)
-        )",
-        [],
-    )
-    .context("Failed to create aliases table")?;
+    // Get current schema version
+    let current_version: i32 = conn
+        .query_row(
+            "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
 
-    // Create indices for improved query performance
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_branches_repo_last_used
-         ON branches(repo_path, last_used DESC)",
-        [],
-    )
-    .context("Failed to create branches repo index")?;
+    // Run migrations if needed
+    if current_version < CURRENT_SCHEMA_VERSION {
+        run_migrations(conn, current_version)?;
+    }
 
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_branches_last_used
-         ON branches(last_used DESC)",
-        [],
-    )
-    .context("Failed to create branches last_used index")?;
+    Ok(())
+}
 
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_aliases_branch
-         ON aliases(repo_path, branch_name)",
-        [],
-    )
-    .context("Failed to create aliases branch index")?;
+/// Run database migrations from one version to another
+fn run_migrations(conn: &Connection, from_version: i32) -> Result<()> {
+    let now = now_timestamp();
+
+    // Apply migrations incrementally
+    for version in (from_version + 1)..=CURRENT_SCHEMA_VERSION {
+        match version {
+            1 => {
+                // Version 1: Initial schema with branches table
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS branches (
+                        id INTEGER PRIMARY KEY,
+                        repo_path TEXT NOT NULL,
+                        branch_name TEXT NOT NULL,
+                        switch_count INTEGER DEFAULT 1,
+                        last_used INTEGER NOT NULL,
+                        UNIQUE(repo_path, branch_name)
+                    )",
+                    [],
+                )
+                .context("Failed to create branches table in migration v1")?;
+
+                // Add indices for branches
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_branches_repo_last_used
+                     ON branches(repo_path, last_used DESC)",
+                    [],
+                )
+                .context("Failed to create branches repo index in migration v1")?;
+
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_branches_last_used
+                     ON branches(last_used DESC)",
+                    [],
+                )
+                .context("Failed to create branches last_used index in migration v1")?;
+
+                // Create previous_branch table
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS previous_branch (
+                        repo_path TEXT PRIMARY KEY,
+                        branch_name TEXT NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )",
+                    [],
+                )
+                .context("Failed to create previous_branch table in migration v1")?;
+            }
+            2 => {
+                // Version 2: Add aliases table
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS aliases (
+                        repo_path TEXT NOT NULL,
+                        alias TEXT NOT NULL,
+                        branch_name TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        PRIMARY KEY (repo_path, alias)
+                    )",
+                    [],
+                )
+                .context("Failed to create aliases table in migration v2")?;
+
+                // Add index for aliases
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_aliases_branch
+                     ON aliases(repo_path, branch_name)",
+                    [],
+                )
+                .context("Failed to create aliases branch index in migration v2")?;
+            }
+            _ => {
+                // Unknown version - should never happen
+                anyhow::bail!("Unknown migration version: {}", version);
+            }
+        }
+
+        // Record that this migration was applied
+        conn.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?1, ?2)",
+            [&version.to_string(), &now.to_string()],
+        )
+        .context(format!("Failed to record migration version {}", version))?;
+    }
 
     Ok(())
 }
@@ -1438,5 +1504,255 @@ mod tests {
         assert_eq!(aliases2.len(), 1);
         assert!(aliases2.contains(&"main".to_string()));
         assert!(!aliases2.contains(&"m".to_string()));
+    }
+
+    // Migration tests
+    #[test]
+    fn test_schema_version_table_created() {
+        let conn = open_test_db().unwrap();
+
+        // Verify schema_version table exists
+        let table_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(table_exists, 1);
+    }
+
+    #[test]
+    fn test_fresh_database_migrates_to_current() {
+        let conn = open_test_db().unwrap();
+
+        // Check that we're at current version
+        let version: i32 = conn
+            .query_row(
+                "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(version, CURRENT_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn test_migration_creates_all_tables() {
+        let conn = open_test_db().unwrap();
+
+        // Verify branches table exists
+        let branches_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='branches'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(branches_exists, 1);
+
+        // Verify aliases table exists
+        let aliases_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='aliases'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(aliases_exists, 1);
+
+        // Verify previous_branch table exists
+        let prev_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='previous_branch'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(prev_exists, 1);
+    }
+
+    #[test]
+    fn test_migration_creates_all_indices() {
+        let conn = open_test_db().unwrap();
+
+        // Get all index names
+        let indices: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='index'")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .map_while(Result::ok)
+            .collect();
+
+        // Check for expected indices
+        assert!(indices.contains(&"idx_branches_repo_last_used".to_string()));
+        assert!(indices.contains(&"idx_branches_last_used".to_string()));
+        assert!(indices.contains(&"idx_aliases_branch".to_string()));
+    }
+
+    #[test]
+    fn test_migration_records_versions() {
+        let conn = open_test_db().unwrap();
+
+        // Check that both migration versions are recorded
+        let versions: Vec<i32> = conn
+            .prepare("SELECT version FROM schema_version ORDER BY version")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .map_while(Result::ok)
+            .collect();
+
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions[0], 1);
+        assert_eq!(versions[1], 2);
+    }
+
+    #[test]
+    fn test_migration_from_v1_to_v2() {
+        // Simulate a database that only has v1 schema
+        let conn = Connection::open_in_memory().unwrap();
+
+        // Create schema_version table
+        conn.execute(
+            "CREATE TABLE schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // Manually create v1 schema
+        conn.execute(
+            "CREATE TABLE branches (
+                id INTEGER PRIMARY KEY,
+                repo_path TEXT NOT NULL,
+                branch_name TEXT NOT NULL,
+                switch_count INTEGER DEFAULT 1,
+                last_used INTEGER NOT NULL,
+                UNIQUE(repo_path, branch_name)
+            )",
+            [],
+        )
+        .unwrap();
+
+        // Record v1 migration
+        conn.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (1, 1234567890)",
+            [],
+        )
+        .unwrap();
+
+        // Now run initialization (should migrate to v2)
+        initialize_tables(&conn).unwrap();
+
+        // Verify we're at v2
+        let version: i32 = conn
+            .query_row(
+                "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, 2);
+
+        // Verify aliases table was created
+        let aliases_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='aliases'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(aliases_exists, 1);
+    }
+
+    #[test]
+    fn test_no_migration_when_current() {
+        let conn = open_test_db().unwrap();
+
+        // Get current version count
+        let version_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_version",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        // Run initialization again (should not add duplicate versions)
+        initialize_tables(&conn).unwrap();
+
+        let new_version_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_version",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        // Count should be the same (no duplicate migrations)
+        assert_eq!(version_count, new_version_count);
+    }
+
+    #[test]
+    fn test_migration_preserves_existing_data() {
+        // Create a database with v1 and some data
+        let conn = Connection::open_in_memory().unwrap();
+
+        // Create schema_version table
+        conn.execute(
+            "CREATE TABLE schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // Create v1 schema
+        conn.execute(
+            "CREATE TABLE branches (
+                id INTEGER PRIMARY KEY,
+                repo_path TEXT NOT NULL,
+                branch_name TEXT NOT NULL,
+                switch_count INTEGER DEFAULT 1,
+                last_used INTEGER NOT NULL,
+                UNIQUE(repo_path, branch_name)
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (1, 1234567890)",
+            [],
+        )
+        .unwrap();
+
+        // Add some test data
+        conn.execute(
+            "INSERT INTO branches (repo_path, branch_name, switch_count, last_used)
+             VALUES ('/test', 'main', 5, 1234567890)",
+            [],
+        )
+        .unwrap();
+
+        // Run migration to v2
+        initialize_tables(&conn).unwrap();
+
+        // Verify data is preserved
+        let switch_count: i64 = conn
+            .query_row(
+                "SELECT switch_count FROM branches WHERE branch_name = 'main'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(switch_count, 5);
     }
 }
