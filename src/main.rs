@@ -47,6 +47,15 @@ fn main() -> Result<()> {
                 handle_alias_command(alias.as_deref(), branch.as_deref(), list, remove)?;
                 return Ok(());
             }
+            Commands::Cleanup {
+                older_than,
+                deleted,
+                optimize,
+                size,
+            } => {
+                handle_cleanup_command(older_than, deleted, optimize, size)?;
+                return Ok(());
+            }
         }
     }
 
@@ -228,6 +237,57 @@ fn checkout_previous_branch() -> Result<()> {
     }
 
     println!("Switched to branch '{}'", previous_branch);
+    Ok(())
+}
+
+/// Handle cleanup subcommand operations
+fn handle_cleanup_command(
+    older_than_days: i64,
+    cleanup_deleted: bool,
+    optimize: bool,
+    show_size: bool,
+) -> Result<()> {
+    if show_size {
+        let size = storage::get_database_size()?;
+        let size_kb = size as f64 / 1024.0;
+        let size_mb = size_kb / 1024.0;
+
+        if size_mb > 1.0 {
+            println!("Database size: {:.2} MB", size_mb);
+        } else {
+            println!("Database size: {:.2} KB", size_kb);
+        }
+    }
+
+    if cleanup_deleted {
+        println!("Cleaning up deleted branches...");
+        let deleted = storage::cleanup_deleted_branches()?;
+        println!("Removed {} stale branch records", deleted);
+    }
+
+    // Cleanup old records (always run if a custom age is specified, or if --optimize is used)
+    if older_than_days < 365 || optimize {
+        println!("Cleaning up branches older than {} days...", older_than_days);
+        let deleted = storage::cleanup_old_records(older_than_days)?;
+        println!("Removed {} old branch records", deleted);
+    }
+
+    if optimize {
+        println!("Optimizing database...");
+        storage::optimize_database()?;
+        println!("Database optimized (VACUUM and ANALYZE complete)");
+    }
+
+    if !show_size && !cleanup_deleted && !optimize && older_than_days == 365 {
+        // No flags specified, show help
+        println!("Database cleanup options:");
+        println!("  --deleted          Remove records for deleted branches");
+        println!("  --older-than N     Remove branches not used in N days");
+        println!("  --optimize         Run VACUUM and ANALYZE");
+        println!("  --size             Show database size");
+        println!("\nExample: ggo cleanup --deleted --optimize");
+    }
+
     Ok(())
 }
 

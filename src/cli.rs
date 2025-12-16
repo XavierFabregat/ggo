@@ -80,6 +80,25 @@ pub enum Commands {
         #[arg(short, long)]
         remove: bool,
     },
+
+    /// Database maintenance and cleanup
+    Cleanup {
+        /// Remove branches older than specified days (default: 365)
+        #[arg(long, default_value = "365")]
+        older_than: i64,
+
+        /// Remove records for deleted branches
+        #[arg(long)]
+        deleted: bool,
+
+        /// Optimize database (VACUUM and ANALYZE)
+        #[arg(long)]
+        optimize: bool,
+
+        /// Show database size
+        #[arg(long)]
+        size: bool,
+    },
 }
 
 #[cfg(test)]

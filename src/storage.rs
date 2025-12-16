@@ -461,7 +461,6 @@ pub fn get_aliases_for_branch(repo_path: &str, branch_name: &str) -> Result<Vec<
 }
 
 /// Remove branch records older than the specified age (in days)
-#[allow(dead_code)]
 pub fn cleanup_old_records(max_age_days: i64) -> Result<usize> {
     let conn = open_db()?;
     let now = now_timestamp();
@@ -476,7 +475,6 @@ pub fn cleanup_old_records(max_age_days: i64) -> Result<usize> {
 
 /// Remove branches and aliases that no longer exist in their repositories
 /// Returns the number of records cleaned up
-#[allow(dead_code)]
 pub fn cleanup_deleted_branches() -> Result<usize> {
     let conn = open_db()?;
     let records = get_all_records()?;
@@ -537,7 +535,6 @@ pub fn cleanup_deleted_branches() -> Result<usize> {
 }
 
 /// Optimize database with VACUUM and ANALYZE
-#[allow(dead_code)]
 pub fn optimize_database() -> Result<()> {
     let conn = open_db()?;
     conn.execute("VACUUM", []).context("Failed to run VACUUM")?;
@@ -547,7 +544,6 @@ pub fn optimize_database() -> Result<()> {
 }
 
 /// Get database file size in bytes
-#[allow(dead_code)]
 pub fn get_database_size() -> Result<u64> {
     let db_path = get_db_path()?;
     let metadata = std::fs::metadata(db_path).context("Failed to get database metadata")?;
