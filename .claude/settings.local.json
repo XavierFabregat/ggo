@@ -15,7 +15,8 @@
       "Bash(ggo alias:*)",
       "Bash(ggo --list:*)",
       "Bash(ggo fa:*)",
-      "Bash(cargo fmt:*)"
+      "Bash(cargo fmt:*)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": [],
     "ask": []

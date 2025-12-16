@@ -1,41 +1,34 @@
+use crate::constants::frecency::*;
 use crate::storage::BranchRecord;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Calculate the frecency score for a branch record.
+/// Half-life for exponential decay (1 week in seconds)
+/// After this duration, a branch's recency weight is halved
+const HALF_LIFE_SECONDS: f64 = 604800.0; // 1 week
+
+/// Calculate the frecency score for a branch record using exponential decay.
 ///
-/// Frecency = frequency × recency_weight
+/// Frecency = frequency × exp(-λ × age)
+/// where λ = ln(2) / half_life
 ///
-/// The recency weight decays over time:
-/// - Used in last hour: weight = 4.0
-/// - Used in last day: weight = 2.0
-/// - Used in last week: weight = 1.0
-/// - Used in last month: weight = 0.5
-/// - Older: weight = 0.25
+/// This provides smooth decay instead of stepped tiers, more similar to zoxide's algorithm.
+/// The half-life is 1 week, meaning a branch's recency weight halves each week.
 pub fn calculate_score(record: &BranchRecord) -> f64 {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs() as i64;
+        .as_secs() as f64;
 
-    let age_seconds = now - record.last_used;
+    let age_seconds = now - record.last_used as f64;
 
-    let recency_weight = if age_seconds < 3600 {
-        // Last hour
-        4.0
-    } else if age_seconds < 86400 {
-        // Last day
-        2.0
-    } else if age_seconds < 604800 {
-        // Last week
-        1.0
-    } else if age_seconds < 2592000 {
-        // Last month
-        0.5
-    } else {
-        // Older
-        0.25
-    };
+    // Decay constant (lambda) = ln(2) / half_life
+    let lambda = 2.0_f64.ln() / HALF_LIFE_SECONDS;
 
+    // Exponential decay: e^(-λt)
+    // This gives smooth decay: 1.0 at t=0, 0.5 at t=half_life, 0.25 at t=2*half_life, etc.
+    let recency_weight = (-lambda * age_seconds).exp();
+
+    // Multiply frequency by decayed recency weight
     record.switch_count as f64 * recency_weight
 }
 
@@ -107,20 +100,20 @@ pub fn format_relative_time(timestamp: i64) -> String {
 
     if age_seconds < 60 {
         "just now".to_string()
-    } else if age_seconds < 3600 {
+    } else if age_seconds < HOUR_SECONDS {
         let mins = age_seconds / 60;
         format!("{}m ago", mins)
-    } else if age_seconds < 86400 {
-        let hours = age_seconds / 3600;
+    } else if age_seconds < DAY_SECONDS {
+        let hours = age_seconds / HOUR_SECONDS;
         format!("{}h ago", hours)
-    } else if age_seconds < 604800 {
-        let days = age_seconds / 86400;
+    } else if age_seconds < WEEK_SECONDS {
+        let days = age_seconds / DAY_SECONDS;
         format!("{}d ago", days)
-    } else if age_seconds < 2592000 {
-        let weeks = age_seconds / 604800;
+    } else if age_seconds < MONTH_SECONDS {
+        let weeks = age_seconds / WEEK_SECONDS;
         format!("{}w ago", weeks)
     } else {
-        let months = age_seconds / 2592000;
+        let months = age_seconds / MONTH_SECONDS;
         format!("{}mo ago", months)
     }
 }
@@ -144,7 +137,9 @@ mod tests {
         };
 
         let score = calculate_score(&record);
-        assert_eq!(score, 40.0); // 10 * 4.0
+        // With exponential decay, very recent items have weight ~1.0
+        // 10 * ~1.0 ≈ 10.0
+        assert!(score > 9.9 && score < 10.1);
     }
 
     #[test]
@@ -162,7 +157,9 @@ mod tests {
         };
 
         let score = calculate_score(&record);
-        assert_eq!(score, 20.0); // 5 * 4.0
+        // With exponential decay, 1 hour old has weight ~0.999
+        // 5 * ~0.999 ≈ 5.0
+        assert!(score > 4.9 && score < 5.1);
     }
 
     #[test]
@@ -180,7 +177,9 @@ mod tests {
         };
 
         let score = calculate_score(&record);
-        assert_eq!(score, 16.0); // 8 * 2.0
+        // With exponential decay, 12 hours (~7% of half-life) has weight ~0.95
+        // 8 * ~0.95 ≈ 7.6
+        assert!(score > 7.5 && score < 7.7);
     }
 
     #[test]
@@ -198,7 +197,9 @@ mod tests {
         };
 
         let score = calculate_score(&record);
-        assert_eq!(score, 6.0); // 6 * 1.0
+        // 3 days is ~0.43 of half-life, weight ≈ 0.75
+        // 6 * ~0.75 ≈ 4.5
+        assert!(score > 4.4 && score < 4.7);
     }
 
     #[test]
@@ -212,11 +213,13 @@ mod tests {
             repo_path: "/test".to_string(),
             branch_name: "bugfix".to_string(),
             switch_count: 4,
-            last_used: now - 1209600, // 14 days ago
+            last_used: now - 1209600, // 14 days ago (2 weeks = 2 half-lives)
         };
 
         let score = calculate_score(&record);
-        assert_eq!(score, 2.0); // 4 * 0.5
+        // 2 half-lives means weight = 0.25
+        // 4 * 0.25 = 1.0
+        assert!(score > 0.9 && score < 1.1);
     }
 
     #[test]
@@ -230,11 +233,13 @@ mod tests {
             repo_path: "/test".to_string(),
             branch_name: "main".to_string(),
             switch_count: 10,
-            last_used: now - 3000000, // ~35 days ago
+            last_used: now - 3000000, // ~35 days ago (~5 half-lives)
         };
 
         let score = calculate_score(&record);
-        assert_eq!(score, 2.5); // 10 * 0.25
+        // 5 half-lives: weight ≈ 0.03125 (1/32)
+        // 10 * 0.03125 ≈ 0.31
+        assert!(score > 0.3 && score < 0.35);
     }
 
     #[test]
@@ -252,7 +257,7 @@ mod tests {
         };
 
         let score = calculate_score(&record);
-        assert_eq!(score, 0.0); // 0 * 4.0
+        assert_eq!(score, 0.0); // 0 * any_weight = 0
     }
 
     #[test]
@@ -279,7 +284,8 @@ mod tests {
         let ranked = rank_branches(&records);
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].name, "main");
-        assert_eq!(ranked[0].score, 20.0);
+        // Score should be ~5.0 (5 switches * ~1.0 weight for very recent)
+        assert!(ranked[0].score > 4.9 && ranked[0].score < 5.1);
         assert_eq!(ranked[0].switch_count, 5);
     }
 
@@ -295,30 +301,31 @@ mod tests {
                 repo_path: "/test".to_string(),
                 branch_name: "old".to_string(),
                 switch_count: 10,
-                last_used: now - 3000000, // Old: score = 2.5
+                last_used: now - 3000000, // ~35 days: weight ≈ 0.03
             },
             BranchRecord {
                 repo_path: "/test".to_string(),
                 branch_name: "recent".to_string(),
                 switch_count: 5,
-                last_used: now - 60, // Recent: score = 20.0
+                last_used: now - 60, // Recent: weight ≈ 1.0
             },
             BranchRecord {
                 repo_path: "/test".to_string(),
                 branch_name: "medium".to_string(),
                 switch_count: 3,
-                last_used: now - 43200, // Day: score = 6.0
+                last_used: now - 43200, // 12 hours: weight ≈ 0.99
             },
         ];
 
         let ranked = rank_branches(&records);
         assert_eq!(ranked.len(), 3);
+        // Should be sorted by score (highest first)
         assert_eq!(ranked[0].name, "recent");
-        assert_eq!(ranked[0].score, 20.0);
+        assert!(ranked[0].score > 4.9); // ~5.0
         assert_eq!(ranked[1].name, "medium");
-        assert_eq!(ranked[1].score, 6.0);
+        assert!(ranked[1].score > 2.8 && ranked[1].score < 2.9); // ~2.86
         assert_eq!(ranked[2].name, "old");
-        assert_eq!(ranked[2].score, 2.5);
+        assert!(ranked[2].score > 0.3 && ranked[2].score < 0.35); // ~0.31
     }
 
     #[test]
@@ -365,22 +372,22 @@ mod tests {
                 repo_path: "/test".to_string(),
                 branch_name: "develop".to_string(),
                 switch_count: 10,
-                last_used: now - 60, // score = 40.0
+                last_used: now - 60, // weight ≈ 1.0, score ≈ 10.0
             },
             BranchRecord {
                 repo_path: "/test".to_string(),
                 branch_name: "main".to_string(),
                 switch_count: 5,
-                last_used: now - 43200, // score = 10.0
+                last_used: now - 43200, // 12h: weight ≈ 0.99, score ≈ 5.0
             },
         ];
 
         let sorted = sort_branches_by_frecency(&branches, &records);
         assert_eq!(sorted.len(), 3);
         assert_eq!(sorted[0].0, "develop");
-        assert_eq!(sorted[0].1, 40.0);
+        assert!(sorted[0].1 > 9.9 && sorted[0].1 < 10.1);
         assert_eq!(sorted[1].0, "main");
-        assert_eq!(sorted[1].1, 10.0);
+        assert!(sorted[1].1 > 4.7 && sorted[1].1 < 4.8);
         assert_eq!(sorted[2].0, "feature");
         assert_eq!(sorted[2].1, 0.0);
     }

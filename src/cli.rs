@@ -25,9 +25,9 @@ use clap::{Parser, Subcommand};
 ///     ggo learns from your usage patterns. The more you use a branch,
 ///     the higher it ranks in search results. Fuzzy matching is enabled
 ///     by default for more forgiving pattern matching.
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(name = "ggo")]
-#[command(version)]
+#[command(disable_version_flag = true)]
 #[command(about = "Smart Git Navigation Tool", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
@@ -55,6 +55,10 @@ pub struct Cli {
     /// Show usage statistics
     #[arg(long)]
     pub stats: bool,
+
+    /// Print version
+    #[arg(short = 'v', short_alias = 'V', long)]
+    pub version: bool,
 }
 
 #[derive(Subcommand, Debug, PartialEq)]
@@ -75,6 +79,25 @@ pub enum Commands {
         /// Remove the alias
         #[arg(short, long)]
         remove: bool,
+    },
+
+    /// Database maintenance and cleanup
+    Cleanup {
+        /// Remove branches older than specified days (default: 365)
+        #[arg(long, default_value = "365")]
+        older_than: i64,
+
+        /// Remove records for deleted branches
+        #[arg(long)]
+        deleted: bool,
+
+        /// Optimize database (VACUUM and ANALYZE)
+        #[arg(long)]
+        optimize: bool,
+
+        /// Show database size
+        #[arg(long)]
+        size: bool,
     },
 }
 

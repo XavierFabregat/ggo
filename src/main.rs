@@ -1,17 +1,39 @@
 mod cli;
+mod constants;
 mod frecency;
 mod git;
 mod interactive;
 mod matcher;
 mod storage;
+mod validation;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
+use tracing::{debug, warn};
 
 use cli::{Cli, Commands};
+use constants::scoring::{AUTO_SELECT_THRESHOLD, FRECENCY_MULTIPLIER};
 
 fn main() -> Result<()> {
+    // Initialize tracing for structured logging
+    // Set RUST_LOG=debug for verbose output, or RUST_LOG=trace for very verbose
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+        )
+        .with_target(false)
+        .with_level(true)
+        .init();
+
     let cli = Cli::parse();
+    debug!("CLI arguments: {:?}", cli);
+
+    // Handle version flag
+    if cli.version {
+        println!("ggo {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
 
     // Handle subcommands first
     if let Some(command) = cli.command {
@@ -23,6 +45,15 @@ fn main() -> Result<()> {
                 remove,
             } => {
                 handle_alias_command(alias.as_deref(), branch.as_deref(), list, remove)?;
+                return Ok(());
+            }
+            Commands::Cleanup {
+                older_than,
+                deleted,
+                optimize,
+                size,
+            } => {
+                handle_cleanup_command(older_than, deleted, optimize, size)?;
                 return Ok(());
             }
         }
@@ -37,13 +68,16 @@ fn main() -> Result<()> {
     let pattern = cli
         .pattern
         .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("Pattern argument is required"))?;
+        .ok_or_else(|| anyhow::anyhow!("Pattern argument is required\n\nUsage: ggo <pattern>\nTry 'ggo --help' for more information"))?;
 
     // Handle the special '-' pattern to go back to previous branch
     if pattern == "-" {
         checkout_previous_branch()?;
         return Ok(());
     }
+
+    // Validate search pattern
+    validation::validate_pattern(pattern).context("Invalid search pattern")?;
 
     if cli.list {
         list_matching_branches(pattern, cli.ignore_case, !cli.no_fuzzy)?;
@@ -88,15 +122,27 @@ fn show_stats() -> Result<()> {
 
 fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> Result<()> {
     let branches = git::get_branches()?;
-    let repo_path = git::get_repo_root().unwrap_or_default();
-    let records = storage::get_branch_records(&repo_path).unwrap_or_default();
+    let repo_path = git::get_repo_root().context("Failed to determine git repository root")?;
+
+    // Try to load branch history, but continue without it if it fails
+    let records = match storage::get_branch_records(&repo_path) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("⚠️  Warning: Could not load branch history: {}", e);
+            eprintln!("   Frecency ranking will not be available.");
+            vec![]
+        }
+    };
 
     let ranked = if use_fuzzy {
         // Use fuzzy matching and combine with frecency
         let fuzzy_matches = matcher::fuzzy_filter_branches(&branches, pattern, ignore_case);
 
         if fuzzy_matches.is_empty() {
-            bail!("No branches found matching '{}'", pattern);
+            bail!(
+                "No branches found matching '{}'\n\nTry:\n  • Using a different pattern\n  • Running 'git branch' to see all branches\n  • Using 'ggo --list \"\"' to list all branches",
+                pattern
+            );
         }
 
         combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records)
@@ -105,7 +151,10 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
         let matches = matcher::filter_branches(&branches, pattern, ignore_case);
 
         if matches.is_empty() {
-            bail!("No branches found matching '{}'", pattern);
+            bail!(
+                "No branches found matching '{}'\n\nTry:\n  • Using a different pattern\n  • Enabling fuzzy matching (remove --no-fuzzy flag)\n  • Running 'git branch' to see all branches",
+                pattern
+            );
         }
 
         let match_strings: Vec<String> = matches.iter().map(|s| s.to_string()).collect();
@@ -151,13 +200,28 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
 fn checkout_previous_branch() -> Result<()> {
     let repo_path = git::get_repo_root()?;
 
-    let previous_branch = storage::get_previous_branch(&repo_path)?
-        .ok_or_else(|| anyhow::anyhow!("No previous branch found"))?;
+    let previous_branch = storage::get_previous_branch(&repo_path)?.ok_or_else(|| {
+        anyhow::anyhow!(
+            "No previous branch found\n\nYou haven't switched branches yet in this repository"
+        )
+    })?;
+
+    // Re-verify branch exists before checkout (prevent race condition)
+    let current_branches =
+        git::get_branches().context("Failed to verify branch list before checkout")?;
+
+    if !current_branches.contains(&previous_branch) {
+        bail!(
+            "Branch '{}' no longer exists\n\nYour previous branch may have been deleted.\nRun 'git branch' to see available branches.",
+            previous_branch
+        );
+    }
 
     // Save current branch before switching
     if let Ok(current_branch) = git::get_current_branch() {
         if let Err(e) = storage::save_previous_branch(&repo_path, &current_branch) {
-            eprintln!("Warning: Failed to save current branch: {}", e);
+            eprintln!("⚠️  Warning: Could not save previous branch: {}", e);
+            eprintln!("   The 'ggo -' command may not work correctly.");
         }
     }
 
@@ -166,10 +230,67 @@ fn checkout_previous_branch() -> Result<()> {
 
     // Record the checkout for frecency tracking
     if let Err(e) = storage::record_checkout(&repo_path, &previous_branch) {
-        eprintln!("Warning: Failed to record checkout: {}", e);
+        eprintln!("⚠️  Warning: Could not save branch usage: {}", e);
+        eprintln!(
+            "   This won't affect future checkouts, but frecency tracking may be incomplete."
+        );
     }
 
     println!("Switched to branch '{}'", previous_branch);
+    Ok(())
+}
+
+/// Handle cleanup subcommand operations
+fn handle_cleanup_command(
+    older_than_days: i64,
+    cleanup_deleted: bool,
+    optimize: bool,
+    show_size: bool,
+) -> Result<()> {
+    if show_size {
+        let size = storage::get_database_size()?;
+        let size_kb = size as f64 / 1024.0;
+        let size_mb = size_kb / 1024.0;
+
+        if size_mb > 1.0 {
+            println!("Database size: {:.2} MB", size_mb);
+        } else {
+            println!("Database size: {:.2} KB", size_kb);
+        }
+    }
+
+    if cleanup_deleted {
+        println!("Cleaning up deleted branches...");
+        let deleted = storage::cleanup_deleted_branches()?;
+        println!("Removed {} stale branch records", deleted);
+    }
+
+    // Cleanup old records (always run if a custom age is specified, or if --optimize is used)
+    if older_than_days < 365 || optimize {
+        println!(
+            "Cleaning up branches older than {} days...",
+            older_than_days
+        );
+        let deleted = storage::cleanup_old_records(older_than_days)?;
+        println!("Removed {} old branch records", deleted);
+    }
+
+    if optimize {
+        println!("Optimizing database...");
+        storage::optimize_database()?;
+        println!("Database optimized (VACUUM and ANALYZE complete)");
+    }
+
+    if !show_size && !cleanup_deleted && !optimize && older_than_days == 365 {
+        // No flags specified, show help
+        println!("Database cleanup options:");
+        println!("  --deleted          Remove records for deleted branches");
+        println!("  --older-than N     Remove branches not used in N days");
+        println!("  --optimize         Run VACUUM and ANALYZE");
+        println!("  --size             Show database size");
+        println!("\nExample: ggo cleanup --deleted --optimize");
+    }
+
     Ok(())
 }
 
@@ -209,17 +330,18 @@ fn handle_alias_command(
     // If branch is provided, create/update alias
     if let Some(branch_name) = branch {
         // Validate alias name
-        if !is_valid_alias(alias) {
-            bail!(
-                "Invalid alias name '{}'. Alias must contain only alphanumeric characters, dash, or underscore, and cannot start with '-'",
-                alias
-            );
-        }
+        validation::validate_alias_name(alias).context("Invalid alias name")?;
+
+        // Validate branch name
+        validation::validate_branch_name(branch_name).context("Invalid branch name")?;
 
         // Validate that branch exists
         let branches = git::get_branches()?;
         if !branches.contains(&branch_name.to_string()) {
-            bail!("Branch '{}' does not exist in this repository", branch_name);
+            bail!(
+                "Branch '{}' does not exist in this repository\n\nRun 'git branch' to see available branches",
+                branch_name
+            );
         }
 
         // Create/update the alias
@@ -239,23 +361,6 @@ fn handle_alias_command(
     }
 
     Ok(())
-}
-
-/// Validate alias name
-fn is_valid_alias(alias: &str) -> bool {
-    if alias.is_empty() || alias.starts_with('-') {
-        return false;
-    }
-
-    // Check if alias is a reserved word
-    if matches!(alias, "stats" | "alias") {
-        return false;
-    }
-
-    // Allow alphanumeric, dash, and underscore
-    alias
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
 }
 
 /// Combine fuzzy match scores with frecency scores for final ranking
@@ -280,8 +385,8 @@ fn combine_fuzzy_and_frecency_scores(
             let frecency_score = frecency_map.get(m.branch.as_str()).copied().unwrap_or(0.0);
 
             // Combine scores: fuzzy match quality + (frecency * weight)
-            // Frecency gets a 10x multiplier to give it significant weight
-            let combined_score = fuzzy_score + (frecency_score * 10.0);
+            // Frecency gets a multiplier to give it significant weight
+            let combined_score = fuzzy_score + (frecency_score * FRECENCY_MULTIPLIER);
 
             (m.branch.clone(), combined_score)
         })
@@ -300,8 +405,17 @@ fn find_and_checkout_branch(
     interactive: bool,
 ) -> Result<String> {
     let branches = git::get_branches()?;
-    let repo_path = git::get_repo_root().unwrap_or_default();
-    let records = storage::get_branch_records(&repo_path).unwrap_or_default();
+    let repo_path = git::get_repo_root().context("Failed to determine git repository root")?;
+
+    // Try to load branch history, but continue without it if it fails
+    let records = match storage::get_branch_records(&repo_path) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("⚠️  Warning: Could not load branch history: {}", e);
+            eprintln!("   Frecency ranking will not be available.");
+            vec![]
+        }
+    };
 
     // Check if pattern is an exact alias match (highest priority)
     // Note: get_alias() only returns aliases for the current repo (scoped by repo_path)
@@ -311,12 +425,27 @@ fn find_and_checkout_branch(
         // This protects against stale aliases pointing to deleted branches
         if branches.contains(&branch_name) {
             println!("Using alias '{}' → '{}'", pattern, branch_name);
+
+            // Re-verify branch exists before checkout (prevent race condition)
+            let current_branches =
+                git::get_branches().context("Failed to verify branch list before checkout")?;
+
+            if !current_branches.contains(&branch_name) {
+                bail!(
+                    "Branch '{}' no longer exists\n\nIt may have been deleted after alias lookup.\nRun 'git branch' to see available branches.",
+                    branch_name
+                );
+            }
+
             // Checkout the aliased branch directly
             let current_branch = git::get_current_branch().ok();
             if let Some(ref current) = current_branch {
                 if current != &branch_name {
                     if let Err(e) = storage::save_previous_branch(&repo_path, current) {
-                        eprintln!("Warning: Failed to save current branch: {}", e);
+                        warn!("Failed to save previous branch: {}", e);
+                        eprintln!("⚠️  Warning: 'ggo -' may not work correctly");
+                    } else {
+                        debug!("Saved previous branch: {}", current);
                     }
                 }
             }
@@ -324,7 +453,8 @@ fn find_and_checkout_branch(
             git::checkout(&branch_name)?;
 
             if let Err(e) = storage::record_checkout(&repo_path, &branch_name) {
-                eprintln!("Warning: Failed to record checkout: {}", e);
+                eprintln!("⚠️  Warning: Could not save branch usage: {}", e);
+                eprintln!("   This won't affect future checkouts, but frecency tracking may be incomplete.");
             }
 
             return Ok(branch_name);
@@ -370,12 +500,12 @@ fn find_and_checkout_branch(
         let top_score = ranked[0].1;
         let second_score = ranked[1].1;
 
-        // If top score is 2x or more than second, auto-select
+        // If top score is above threshold compared to second, auto-select
         // Handle edge case where second_score is 0
         let should_auto_select = if second_score == 0.0 {
             true
         } else {
-            top_score / second_score >= 2.0
+            top_score / second_score >= AUTO_SELECT_THRESHOLD
         };
 
         if should_auto_select {
@@ -387,12 +517,24 @@ fn find_and_checkout_branch(
         }
     };
 
+    // Re-verify branch exists before checkout (prevent race condition)
+    let current_branches =
+        git::get_branches().context("Failed to verify branch list before checkout")?;
+
+    if !current_branches.contains(&branch_to_checkout) {
+        bail!(
+            "Branch '{}' no longer exists\n\nIt may have been deleted after the initial search.\nRun 'git branch' to see available branches.",
+            branch_to_checkout
+        );
+    }
+
     // Save current branch as previous before switching
     if let Ok(current_branch) = git::get_current_branch() {
         // Only save if we're switching to a different branch
         if current_branch != branch_to_checkout {
             if let Err(e) = storage::save_previous_branch(&repo_path, &current_branch) {
-                eprintln!("Warning: Failed to save current branch: {}", e);
+                eprintln!("⚠️  Warning: Could not save previous branch: {}", e);
+                eprintln!("   The 'ggo -' command may not work correctly.");
             }
         }
     }
@@ -403,7 +545,10 @@ fn find_and_checkout_branch(
     // Record the checkout for frecency tracking
     if let Err(e) = storage::record_checkout(&repo_path, &branch_to_checkout) {
         // Don't fail the checkout if recording fails, just warn
-        eprintln!("Warning: Failed to record checkout: {}", e);
+        eprintln!("⚠️  Warning: Could not save branch usage: {}", e);
+        eprintln!(
+            "   This won't affect future checkouts, but frecency tracking may be incomplete."
+        );
     }
 
     Ok(branch_to_checkout)
@@ -470,17 +615,17 @@ mod tests {
             repo_path: "/test".to_string(),
             branch_name: "feature/auth".to_string(),
             switch_count: 10,
-            last_used: now - 60, // Recent: frecency score = 40.0
+            last_used: now - 60, // Recent: frecency score ≈ 10.0 (10 * ~1.0)
         }];
 
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
 
         assert_eq!(result.len(), 2);
         // feature/auth should rank higher due to frecency
-        // auth: 80 + (40.0 * 10) = 480
+        // auth: 80 + (10.0 * 10) = 180
         // dashboard: 100 + (0 * 10) = 100
         assert_eq!(result[0].0, "feature/auth");
-        assert_eq!(result[0].1, 480.0);
+        assert!(result[0].1 > 179.0 && result[0].1 < 181.0);
         assert_eq!(result[1].0, "feature/dashboard");
         assert_eq!(result[1].1, 100.0);
     }
@@ -508,23 +653,24 @@ mod tests {
                 repo_path: "/test".to_string(),
                 branch_name: "branch-a".to_string(),
                 switch_count: 1,
-                last_used: now - 3000000, // Old: frecency = 0.25
+                last_used: now - 3000000, // Old: frecency ≈ 0.03 (1 * 0.03)
             },
             BranchRecord {
                 repo_path: "/test".to_string(),
                 branch_name: "branch-b".to_string(),
                 switch_count: 5,
-                last_used: now - 60, // Recent: frecency = 20.0
+                last_used: now - 60, // Recent: frecency ≈ 5.0 (5 * 1.0)
             },
         ];
 
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
 
         assert_eq!(result.len(), 2);
-        // branch-a: 100 + (0.25 * 10) = 102.5
-        // branch-b: 50 + (20.0 * 10) = 250.0
-        assert_eq!(result[0].0, "branch-b");
-        assert_eq!(result[1].0, "branch-a");
+        // branch-a: 100 + (0.03 * 10) ≈ 100.3
+        // branch-b: 50 + (5.0 * 10) = 100.0
+        // branch-a wins slightly (better fuzzy match despite lower frecency)
+        assert_eq!(result[0].0, "branch-a");
+        assert_eq!(result[1].0, "branch-b");
     }
 
     #[test]
@@ -549,16 +695,16 @@ mod tests {
             repo_path: "/test".to_string(),
             branch_name: "popular-branch".to_string(),
             switch_count: 20,
-            last_used: now - 60, // Recent: frecency = 80.0
+            last_used: now - 60, // Recent: frecency ≈ 20.0 (20 * ~1.0)
         }];
 
         let result = combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records);
 
         assert_eq!(result.len(), 2);
-        // popular-branch: 60 + (80.0 * 10) = 860.0
+        // popular-branch: 60 + (20.0 * 10) = 260.0
         // new-branch: 100 + (0 * 10) = 100.0
         assert_eq!(result[0].0, "popular-branch");
-        assert!(result[0].1 > 800.0);
+        assert!(result[0].1 > 259.0 && result[0].1 < 261.0);
     }
 
     #[test]

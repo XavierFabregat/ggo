@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+echo "🔍 Running pre-push checks..."
+echo ""
+
+echo "1️⃣  Running tests..."
+cargo test --quiet
+echo "   ✓ Tests passed"
+echo ""
+
+echo "2️⃣  Checking formatting..."
+cargo fmt -- --check
+echo "   ✓ Formatting is correct"
+echo ""
+
+echo "3️⃣  Running clippy..."
+cargo clippy --all-targets --all-features -- -D warnings
+echo "   ✓ Clippy passed"
+echo ""
+
+echo "✅ All pre-push checks passed! Pushing..."

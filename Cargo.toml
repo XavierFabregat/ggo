@@ -2,15 +2,24 @@
 name = "ggo"
 version = "0.2.0"
 edition = "2021"
+license = "MIT"
 
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 dirs = "5.0"
 fuzzy-matcher = "0.3"
+git2 = "0.19"
 inquire = "0.7"
 rusqlite = { version = "0.31", features = ["bundled"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 tempfile = "3.8"
 scopeguard = "1.2"
+
+[dev-dependencies.cargo-husky]
+version = "1"
+default-features = false
+features = ["user-hooks"]

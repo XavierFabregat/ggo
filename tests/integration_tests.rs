@@ -1,7 +1,9 @@
 use std::env;
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+
+mod common;
+use common::setup_test_repo;
 
 // Helper to get the path to the built ggo binary
 fn get_ggo_binary() -> PathBuf {
@@ -24,45 +26,6 @@ fn get_ggo_binary() -> PathBuf {
     path.push("debug");
     path.push("ggo");
     path
-}
-
-// Helper to create a temporary git repo for testing
-fn setup_test_repo() -> std::io::Result<tempfile::TempDir> {
-    let temp_dir = tempfile::tempdir()?;
-    let repo_path = temp_dir.path();
-
-    // Initialize git repo
-    Command::new("git")
-        .args(["init"])
-        .current_dir(repo_path)
-        .output()?;
-
-    // Configure git for tests
-    Command::new("git")
-        .args(["config", "user.email", "test@example.com"])
-        .current_dir(repo_path)
-        .output()?;
-
-    Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(repo_path)
-        .output()?;
-
-    // Create initial commit
-    let test_file = repo_path.join("test.txt");
-    fs::write(&test_file, "test content")?;
-
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(repo_path)
-        .output()?;
-
-    Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(repo_path)
-        .output()?;
-
-    Ok(temp_dir)
 }
 
 #[test]
@@ -133,10 +96,12 @@ fn test_cli_list_command_in_git_repo() {
         .output()
         .unwrap();
 
+    let test_data_dir = temp_dir.path().join(".ggo");
     let ggo = get_ggo_binary();
     let output = Command::new(&ggo)
         .args(["-l", "feature"])
         .current_dir(repo_path)
+        .env("GGO_DATA_DIR", &test_data_dir)
         .output()
         .expect("Failed to run command");
 
@@ -163,10 +128,12 @@ fn test_cli_no_fuzzy_flag() {
         .output()
         .unwrap();
 
+    let test_data_dir = temp_dir.path().join(".ggo");
     let ggo = get_ggo_binary();
     let output = Command::new(&ggo)
         .args(["-l", "--no-fuzzy", "feature"])
         .current_dir(repo_path)
+        .env("GGO_DATA_DIR", &test_data_dir)
         .output()
         .expect("Failed to run command");
 
@@ -189,10 +156,12 @@ fn test_cli_ignore_case_flag() {
         .output()
         .unwrap();
 
+    let test_data_dir = temp_dir.path().join(".ggo");
     let ggo = get_ggo_binary();
     let output = Command::new(&ggo)
         .args(["-l", "-i", "FEATURE"])
         .current_dir(repo_path)
+        .env("GGO_DATA_DIR", &test_data_dir)
         .output()
         .expect("Failed to run command");
 
@@ -217,10 +186,12 @@ fn test_cli_list_nonexistent_pattern() {
     let temp_dir = setup_test_repo().expect("Failed to create test repo");
     let repo_path = temp_dir.path();
 
+    let test_data_dir = temp_dir.path().join(".ggo");
     let ggo = get_ggo_binary();
     let output = Command::new(&ggo)
         .args(["-l", "nonexistent-branch-xyz"])
         .current_dir(repo_path)
+        .env("GGO_DATA_DIR", &test_data_dir)
         .output()
         .expect("Failed to run command");
 
@@ -254,10 +225,12 @@ fn test_checkout_without_list_flag() {
         .unwrap();
 
     // Try to checkout using ggo
+    let test_data_dir = temp_dir.path().join(".ggo");
     let ggo = get_ggo_binary();
     let output = Command::new(&ggo)
         .args(["test-branch"])
         .current_dir(repo_path)
+        .env("GGO_DATA_DIR", &test_data_dir)
         .output()
         .expect("Failed to run command");
 
@@ -286,10 +259,12 @@ fn test_multiple_branches_matching() {
         .output()
         .unwrap();
 
+    let test_data_dir = temp_dir.path().join(".ggo");
     let ggo = get_ggo_binary();
     let output = Command::new(&ggo)
         .args(["-l", "feature"])
         .current_dir(repo_path)
+        .env("GGO_DATA_DIR", &test_data_dir)
         .output()
         .expect("Failed to run command");
 
@@ -313,10 +288,12 @@ fn test_fuzzy_matching_works() {
         .unwrap();
 
     // Test fuzzy matching with "exo"
+    let test_data_dir = temp_dir.path().join(".ggo");
     let ggo = get_ggo_binary();
     let output = Command::new(&ggo)
         .args(["-l", "exo"])
         .current_dir(repo_path)
+        .env("GGO_DATA_DIR", &test_data_dir)
         .output()
         .expect("Failed to run command");
 
@@ -345,10 +322,12 @@ fn test_empty_pattern_lists_all_branches() {
         .output()
         .unwrap();
 
+    let test_data_dir = temp_dir.path().join(".ggo");
     let ggo = get_ggo_binary();
     let output = Command::new(&ggo)
         .args(["-l", ""])
         .current_dir(repo_path)
+        .env("GGO_DATA_DIR", &test_data_dir)
         .output()
         .expect("Failed to run command");
 
