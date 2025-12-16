@@ -515,11 +515,17 @@ pub fn cleanup_deleted_branches() -> Result<usize> {
                 )
                 .unwrap_or(0);
 
-            conn.execute("DELETE FROM branches WHERE repo_path = ?1", [&record.repo_path])
-                .ok();
+            conn.execute(
+                "DELETE FROM branches WHERE repo_path = ?1",
+                [&record.repo_path],
+            )
+            .ok();
 
-            conn.execute("DELETE FROM aliases WHERE repo_path = ?1", [&record.repo_path])
-                .ok();
+            conn.execute(
+                "DELETE FROM aliases WHERE repo_path = ?1",
+                [&record.repo_path],
+            )
+            .ok();
 
             deleted += branch_count as usize;
         }
@@ -531,8 +537,7 @@ pub fn cleanup_deleted_branches() -> Result<usize> {
 /// Optimize database with VACUUM and ANALYZE
 pub fn optimize_database() -> Result<()> {
     let conn = open_db()?;
-    conn.execute("VACUUM", [])
-        .context("Failed to run VACUUM")?;
+    conn.execute("VACUUM", []).context("Failed to run VACUUM")?;
     conn.execute("ANALYZE", [])
         .context("Failed to run ANALYZE")?;
     Ok(())
@@ -1954,4 +1959,3 @@ mod tests {
         assert!(result.unwrap() > 0);
     }
 }
-
