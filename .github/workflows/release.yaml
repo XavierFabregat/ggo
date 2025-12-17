@@ -16,6 +16,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag is on master branch
+        run: |
+          git fetch origin master
+          if ! git merge-base --is-ancestor $GITHUB_SHA origin/master; then
+            echo "❌ Error: Tags can only be pushed from commits on the master branch"
+            echo "Current commit: $GITHUB_SHA"
+            echo "Please merge to master before creating a release tag"
+            exit 1
+          fi
+          echo "✅ Tag is on master branch, proceeding with release"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
