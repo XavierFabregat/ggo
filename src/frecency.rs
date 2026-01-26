@@ -1,4 +1,4 @@
-use crate::constants::frecency::*;
+use crate::constants::frecency::{DAY_SECONDS, HOUR_SECONDS, MONTH_SECONDS, WEEK_SECONDS};
 use crate::storage::BranchRecord;
 use std::time::{SystemTime, UNIX_EPOCH};
 

@@ -21,9 +21,8 @@ pub mod scoring {
     /// Higher value gives more weight to frecency over fuzzy match quality
     pub const FRECENCY_MULTIPLIER: f64 = 10.0;
 
-    /// Threshold ratio for auto-selecting a branch without showing menu
-    /// If top score is this many times higher than second, auto-select
-    pub const AUTO_SELECT_THRESHOLD: f64 = 2.0;
+    // Note: AUTO_SELECT_THRESHOLD moved to config.behavior.auto_select_threshold
+    // for user configurability
 }
 
 /// Validation limits

@@ -341,7 +341,7 @@ fn test_empty_pattern_lists_all_branches() {
 #[test]
 fn test_cleanup_show_size() {
     scopeguard::defer! {
-        let _ = std::env::remove_var("GGO_DATA_DIR");
+        std::env::remove_var("GGO_DATA_DIR");
     }
     let test_db_dir = tempfile::tempdir().unwrap();
     std::env::set_var("GGO_DATA_DIR", test_db_dir.path());
@@ -395,7 +395,7 @@ fn test_cleanup_no_args_shows_help() {
 #[test]
 fn test_cleanup_deleted_branches() {
     scopeguard::defer! {
-        let _ = std::env::remove_var("GGO_DATA_DIR");
+        std::env::remove_var("GGO_DATA_DIR");
     }
     let test_db_dir = tempfile::tempdir().unwrap();
     std::env::set_var("GGO_DATA_DIR", test_db_dir.path());
@@ -417,7 +417,7 @@ fn test_cleanup_deleted_branches() {
 #[test]
 fn test_cleanup_old_records() {
     scopeguard::defer! {
-        let _ = std::env::remove_var("GGO_DATA_DIR");
+        std::env::remove_var("GGO_DATA_DIR");
     }
     let test_db_dir = tempfile::tempdir().unwrap();
     std::env::set_var("GGO_DATA_DIR", test_db_dir.path());
@@ -439,7 +439,7 @@ fn test_cleanup_old_records() {
 #[test]
 fn test_cleanup_optimize() {
     scopeguard::defer! {
-        let _ = std::env::remove_var("GGO_DATA_DIR");
+        std::env::remove_var("GGO_DATA_DIR");
     }
     let test_db_dir = tempfile::tempdir().unwrap();
     std::env::set_var("GGO_DATA_DIR", test_db_dir.path());
@@ -461,7 +461,7 @@ fn test_cleanup_optimize() {
 #[test]
 fn test_cleanup_combined_flags() {
     scopeguard::defer! {
-        let _ = std::env::remove_var("GGO_DATA_DIR");
+        std::env::remove_var("GGO_DATA_DIR");
     }
     let test_db_dir = tempfile::tempdir().unwrap();
     std::env::set_var("GGO_DATA_DIR", test_db_dir.path());

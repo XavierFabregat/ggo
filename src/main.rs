@@ -19,7 +19,7 @@ use tabled::{
 use tracing::{debug, warn};
 
 use cli::{Cli, Commands};
-use constants::scoring::{AUTO_SELECT_THRESHOLD, FRECENCY_MULTIPLIER};
+use constants::scoring::FRECENCY_MULTIPLIER;
 
 fn main() -> Result<()> {
     // Initialize tracing for structured logging
@@ -105,8 +105,13 @@ fn main() -> Result<()> {
     if cli.list {
         list_matching_branches(pattern, cli.ignore_case, !cli.no_fuzzy)?;
     } else {
-        let branch =
-            find_and_checkout_branch(pattern, cli.ignore_case, !cli.no_fuzzy, cli.interactive, &config)?;
+        let branch = find_and_checkout_branch(
+            pattern,
+            cli.ignore_case,
+            !cli.no_fuzzy,
+            cli.interactive,
+            &config,
+        )?;
         println!("Switched to branch '{}'", branch);
     }
 
