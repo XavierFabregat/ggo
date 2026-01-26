@@ -20,7 +20,9 @@ fuzzy-matcher = "0.3"
 git2 = { version = "0.19", default-features = false, features = ["https", "vendored-openssl", "vendored-libgit2"] }
 inquire = "0.7"
 rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
 tabled = "0.17"
+toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

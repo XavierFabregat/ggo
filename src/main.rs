@@ -1,4 +1,5 @@
 mod cli;
+mod config;
 mod constants;
 mod frecency;
 mod git;
@@ -34,6 +35,16 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
     debug!("CLI arguments: {:?}", cli);
+
+    // Load configuration (use defaults if config file doesn't exist or is invalid)
+    let config = match config::Config::load() {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("Failed to load config, using defaults: {}", e);
+            config::Config::default()
+        }
+    };
+    debug!("Configuration: {:?}", config);
 
     // Handle version flag
     if cli.version {
@@ -95,7 +106,7 @@ fn main() -> Result<()> {
         list_matching_branches(pattern, cli.ignore_case, !cli.no_fuzzy)?;
     } else {
         let branch =
-            find_and_checkout_branch(pattern, cli.ignore_case, !cli.no_fuzzy, cli.interactive)?;
+            find_and_checkout_branch(pattern, cli.ignore_case, !cli.no_fuzzy, cli.interactive, &config)?;
         println!("Switched to branch '{}'", branch);
     }
 
@@ -507,6 +518,7 @@ fn find_and_checkout_branch(
     ignore_case: bool,
     use_fuzzy: bool,
     interactive: bool,
+    config: &config::Config,
 ) -> Result<String> {
     let branches = git::get_branches()?;
     let repo_path = git::get_repo_root().context("Failed to determine git repository root")?;
@@ -609,7 +621,7 @@ fn find_and_checkout_branch(
         let should_auto_select = if second_score == 0.0 {
             true
         } else {
-            top_score / second_score >= AUTO_SELECT_THRESHOLD
+            top_score / second_score >= config.behavior.auto_select_threshold
         };
 
         if should_auto_select {
