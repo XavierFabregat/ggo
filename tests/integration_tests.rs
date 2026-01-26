@@ -588,8 +588,8 @@ fn test_stats_shows_top_branches() {
     let stdout_lower = stdout.to_lowercase();
     assert!(
         stdout_lower.contains("top branches")
-        || stdout_lower.contains("frecency")
-        || stdout_lower.contains("no branch usage data yet")
+            || stdout_lower.contains("frecency")
+            || stdout_lower.contains("no branch usage data yet")
     );
 }
 
