@@ -8,7 +8,8 @@ mod storage;
 mod validation;
 
 use anyhow::{bail, Context, Result};
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete::{generate, Shell};
 use tracing::{debug, warn};
 
 use cli::{Cli, Commands};
@@ -32,6 +33,12 @@ fn main() -> Result<()> {
     // Handle version flag
     if cli.version {
         println!("ggo {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
+    // Handle shell completion generation
+    if let Some(shell) = cli.generate_completion {
+        generate_completion(&shell)?;
         return Ok(());
     }
 
@@ -290,6 +297,26 @@ fn handle_cleanup_command(
         println!("  --size             Show database size");
         println!("\nExample: ggo cleanup --deleted --optimize");
     }
+
+    Ok(())
+}
+
+/// Generate shell completion script
+fn generate_completion(shell_name: &str) -> Result<()> {
+    let shell = match shell_name.to_lowercase().as_str() {
+        "bash" => Shell::Bash,
+        "zsh" => Shell::Zsh,
+        "fish" => Shell::Fish,
+        "powershell" | "pwsh" => Shell::PowerShell,
+        "elvish" => Shell::Elvish,
+        _ => bail!(
+            "Unsupported shell: '{}'\n\nSupported shells:\n  • bash\n  • zsh\n  • fish\n  • powershell\n  • elvish\n\nExample: ggo --generate-completion bash",
+            shell_name
+        ),
+    };
+
+    let mut cmd = Cli::command();
+    generate(shell, &mut cmd, "ggo", &mut std::io::stdout());
 
     Ok(())
 }

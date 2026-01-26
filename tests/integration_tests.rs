@@ -488,3 +488,73 @@ fn test_cleanup_combined_flags() {
     assert!(stdout.contains("Cleaning up deleted branches"));
     assert!(stdout.contains("Optimizing database"));
 }
+
+#[test]
+fn test_generate_completion_bash() {
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["--generate-completion", "bash"])
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    // Bash completion script should contain bash-specific syntax
+    assert!(stdout.contains("_ggo") || stdout.contains("complete"));
+}
+
+#[test]
+fn test_generate_completion_zsh() {
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["--generate-completion", "zsh"])
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    // Zsh completion script should contain zsh-specific syntax
+    assert!(stdout.contains("#compdef") || stdout.contains("_ggo"));
+}
+
+#[test]
+fn test_generate_completion_fish() {
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["--generate-completion", "fish"])
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    // Fish completion script should contain fish-specific syntax
+    assert!(stdout.contains("complete") && stdout.contains("ggo"));
+}
+
+#[test]
+fn test_generate_completion_invalid_shell() {
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["--generate-completion", "invalid"])
+        .output()
+        .expect("Failed to run command");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(stderr.contains("Unsupported shell"));
+    assert!(stderr.contains("Supported shells:"));
+}
+
+#[test]
+fn test_generate_completion_powershell() {
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["--generate-completion", "powershell"])
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    // PowerShell completion should contain PowerShell-specific syntax
+    assert!(stdout.contains("Register-ArgumentCompleter") || stdout.contains("param"));
+}
