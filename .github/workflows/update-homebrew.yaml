@@ -1,4 +1,6 @@
 name: Update Homebrew Formula
+permissions:
+  contents: read
 
 on:
   release:
