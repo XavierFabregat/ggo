@@ -57,6 +57,9 @@ jobs:
           sed -i "/on_intel do/,/on_linux/ s/sha256 \"[^\"]*\"/sha256 \"$MACOS_AMD64_SHA\"/" Formula/ggo.rb
           sed -i "/on_linux do/,/def install/ s/sha256 \"[^\"]*\"/sha256 \"$LINUX_AMD64_SHA\"/" Formula/ggo.rb
 
+          # Update test assertion version
+          sed -i "s/assert_match \"ggo [0-9.]\+\"/assert_match \"ggo $VERSION\"/" Formula/ggo.rb
+
       - name: Commit and push
         run: |
           cd homebrew-tap
