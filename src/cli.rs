@@ -59,6 +59,10 @@ pub struct Cli {
     /// Print version
     #[arg(short = 'v', short_alias = 'V', long)]
     pub version: bool,
+
+    /// Generate shell completion script
+    #[arg(long = "generate-completion", value_name = "SHELL")]
+    pub generate_completion: Option<String>,
 }
 
 #[derive(Subcommand, Debug, PartialEq)]
@@ -459,5 +463,38 @@ mod tests {
             }
             _ => panic!("Expected Cleanup command"),
         }
+    }
+
+    // Shell completion tests
+    #[test]
+    fn test_parse_generate_completion_bash() {
+        let args = vec!["ggo", "--generate-completion", "bash"];
+        let cli = Cli::parse_from(args);
+
+        assert_eq!(cli.generate_completion, Some("bash".to_string()));
+    }
+
+    #[test]
+    fn test_parse_generate_completion_zsh() {
+        let args = vec!["ggo", "--generate-completion", "zsh"];
+        let cli = Cli::parse_from(args);
+
+        assert_eq!(cli.generate_completion, Some("zsh".to_string()));
+    }
+
+    #[test]
+    fn test_parse_generate_completion_fish() {
+        let args = vec!["ggo", "--generate-completion", "fish"];
+        let cli = Cli::parse_from(args);
+
+        assert_eq!(cli.generate_completion, Some("fish".to_string()));
+    }
+
+    #[test]
+    fn test_parse_no_completion() {
+        let args = vec!["ggo", "test"];
+        let cli = Cli::parse_from(args);
+
+        assert_eq!(cli.generate_completion, None);
     }
 }
