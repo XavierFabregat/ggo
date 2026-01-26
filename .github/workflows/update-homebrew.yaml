@@ -1,0 +1,67 @@
+name: Update Homebrew Formula
+permissions:
+  contents: read
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v4
+        with:
+          repository: XavierFabregat/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Download release assets and calculate SHA256
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+          # Download and hash macOS ARM64
+          curl -sL "https://github.com/XavierFabregat/ggo/releases/download/v${VERSION}/ggo-macos-arm64.tar.gz" -o macos-arm64.tar.gz
+          MACOS_ARM64_SHA=$(shasum -a 256 macos-arm64.tar.gz | awk '{print $1}')
+          echo "MACOS_ARM64_SHA=$MACOS_ARM64_SHA" >> $GITHUB_ENV
+
+          # Download and hash macOS AMD64
+          curl -sL "https://github.com/XavierFabregat/ggo/releases/download/v${VERSION}/ggo-macos-amd64.tar.gz" -o macos-amd64.tar.gz
+          MACOS_AMD64_SHA=$(shasum -a 256 macos-amd64.tar.gz | awk '{print $1}')
+          echo "MACOS_AMD64_SHA=$MACOS_AMD64_SHA" >> $GITHUB_ENV
+
+          # Download and hash Linux AMD64
+          curl -sL "https://github.com/XavierFabregat/ggo/releases/download/v${VERSION}/ggo-linux-amd64.tar.gz" -o linux-amd64.tar.gz
+          LINUX_AMD64_SHA=$(shasum -a 256 linux-amd64.tar.gz | awk '{print $1}')
+          echo "LINUX_AMD64_SHA=$LINUX_AMD64_SHA" >> $GITHUB_ENV
+
+      - name: Update formula
+        run: |
+          cd homebrew-tap
+
+          # Update version
+          sed -i "s/version \".*\"/version \"$VERSION\"/" Formula/ggo.rb
+
+          # Update download URLs
+          sed -i "s|download/v[0-9.]\+/|download/v$VERSION/|g" Formula/ggo.rb
+
+          # Update SHA256 hashes
+          sed -i "s/PLACEHOLDER_MACOS_ARM64_SHA256/$MACOS_ARM64_SHA/" Formula/ggo.rb
+          sed -i "s/PLACEHOLDER_MACOS_AMD64_SHA256/$MACOS_AMD64_SHA/" Formula/ggo.rb
+          sed -i "s/PLACEHOLDER_LINUX_AMD64_SHA256/$LINUX_AMD64_SHA/" Formula/ggo.rb
+
+          # Also update any existing SHA256s (for version updates)
+          sed -i "/on_arm do/,/end/ s/sha256 \"[^\"]*\"/sha256 \"$MACOS_ARM64_SHA\"/" Formula/ggo.rb
+          sed -i "/on_intel do/,/on_linux/ s/sha256 \"[^\"]*\"/sha256 \"$MACOS_AMD64_SHA\"/" Formula/ggo.rb
+          sed -i "/on_linux do/,/def install/ s/sha256 \"[^\"]*\"/sha256 \"$LINUX_AMD64_SHA\"/" Formula/ggo.rb
+
+      - name: Commit and push
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/ggo.rb
+          git commit -m "Update ggo to v$VERSION" || echo "No changes to commit"
+          git push
