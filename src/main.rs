@@ -10,6 +10,11 @@ mod validation;
 use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser};
 use clap_complete::{generate, Shell};
+use std::collections::HashMap;
+use tabled::{
+    settings::{object::Rows, Alignment, Modify, Style},
+    Table, Tabled,
+};
 use tracing::{debug, warn};
 
 use cli::{Cli, Commands};
@@ -101,30 +106,102 @@ fn show_stats() -> Result<()> {
     let stats = storage::get_stats()?;
     let records = storage::get_all_records()?;
 
+    // Summary Section
     println!("📊 ggo Statistics\n");
     println!("Total branch switches: {}", stats.total_switches);
     println!("Unique branches tracked: {}", stats.unique_branches);
     println!("Repositories: {}", stats.unique_repos);
     println!("Database location: {}", stats.db_path.display());
 
-    if !records.is_empty() {
-        println!("\n🔥 Top branches by frecency:\n");
+    if records.is_empty() {
+        println!("\nNo branch usage data yet. Start using ggo to build your history!");
+        return Ok(());
+    }
 
-        let scored = frecency::rank_branches(&records);
-        for (i, branch) in scored.iter().take(10).enumerate() {
+    // Top Branches with Bar Charts
+    println!("\n🔥 Top Branches by Frecency:\n");
+
+    let scored = frecency::rank_branches(&records);
+    let top_branches = scored.iter().take(10).collect::<Vec<_>>();
+
+    if !top_branches.is_empty() {
+        let max_score = top_branches[0].score.max(1.0);
+
+        for (i, branch) in top_branches.iter().enumerate() {
             let time_ago = frecency::format_relative_time(branch.last_used);
+            let bar_width = (branch.score / max_score * 40.0) as usize;
+            let bar = "█".repeat(bar_width);
+
             println!(
-                "  {}. {} (score: {:.1}, {} switches, {})",
+                "  {:2}. {:<30} {:>5.1} {} ({} switches, {})",
                 i + 1,
-                branch.name,
+                truncate_string(&branch.name, 30),
                 branch.score,
+                bar,
                 branch.switch_count,
                 time_ago
             );
         }
     }
 
+    // Repository Breakdown
+    if stats.unique_repos > 1 {
+        println!("\n📁 Repository Breakdown:\n");
+
+        #[derive(Tabled)]
+        struct RepoStats {
+            #[tabled(rename = "Repository")]
+            name: String,
+            #[tabled(rename = "Branches")]
+            branches: usize,
+            #[tabled(rename = "Switches")]
+            switches: i64,
+        }
+
+        let mut repo_map: HashMap<String, (usize, i64)> = HashMap::new();
+        for record in &records {
+            let entry = repo_map.entry(record.repo_path.clone()).or_insert((0, 0));
+            entry.0 += 1; // branch count
+            entry.1 += record.switch_count; // total switches
+        }
+
+        let mut repo_stats: Vec<RepoStats> = repo_map
+            .into_iter()
+            .map(|(path, (branches, switches))| {
+                let name = std::path::Path::new(&path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&path)
+                    .to_string();
+                RepoStats {
+                    name,
+                    branches,
+                    switches,
+                }
+            })
+            .collect();
+
+        // Sort by switches descending
+        repo_stats.sort_by(|a, b| b.switches.cmp(&a.switches));
+
+        let mut table = Table::new(repo_stats);
+        table
+            .with(Style::rounded())
+            .with(Modify::new(Rows::first()).with(Alignment::center()));
+
+        println!("{}", table);
+    }
+
     Ok(())
+}
+
+/// Truncate string to max length with ellipsis
+fn truncate_string(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len - 3])
+    }
 }
 
 fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> Result<()> {

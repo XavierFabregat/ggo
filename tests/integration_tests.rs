@@ -558,3 +558,47 @@ fn test_generate_completion_powershell() {
     // PowerShell completion should contain PowerShell-specific syntax
     assert!(stdout.contains("Register-ArgumentCompleter") || stdout.contains("param"));
 }
+
+#[test]
+fn test_stats_has_summary_section() {
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["--stats"])
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    assert!(stdout.contains("ggo Statistics"));
+    assert!(stdout.contains("Total branch switches:"));
+    assert!(stdout.contains("Database location:"));
+}
+
+#[test]
+fn test_stats_shows_top_branches() {
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["--stats"])
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    // Should have a section for top branches (case-insensitive)
+    let stdout_lower = stdout.to_lowercase();
+    assert!(stdout_lower.contains("top branches") || stdout_lower.contains("frecency"));
+}
+
+#[test]
+fn test_stats_repository_breakdown() {
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["--stats"])
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    // Should show repository information
+    assert!(stdout.contains("Repositories:") || stdout.contains("repos"));
+}
