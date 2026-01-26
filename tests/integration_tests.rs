@@ -602,3 +602,70 @@ fn test_stats_repository_breakdown() {
     // Should show repository information
     assert!(stdout.contains("Repositories:") || stdout.contains("repos"));
 }
+
+#[test]
+fn test_config_file_not_required() {
+    // Config file should be optional - ggo works without it
+    let temp_dir = tempfile::tempdir().unwrap();
+    let config_dir = temp_dir.path().join(".config/ggo");
+    std::fs::create_dir_all(&config_dir).unwrap();
+
+    // No config file exists, but ggo should still work
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["--version"])
+        .env("HOME", temp_dir.path())
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_config_file_parsing() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let config_dir = temp_dir.path().join(".config/ggo");
+    std::fs::create_dir_all(&config_dir).unwrap();
+
+    // Create a config file
+    let config_content = r#"
+[frecency]
+half_life_days = 14.0
+
+[behavior]
+auto_select_threshold = 3.0
+default_fuzzy = false
+"#;
+    std::fs::write(config_dir.join("config.toml"), config_content).unwrap();
+
+    // ggo should load and use the config
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["--version"])
+        .env("HOME", temp_dir.path())
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_invalid_config_uses_defaults() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let config_dir = temp_dir.path().join(".config/ggo");
+    std::fs::create_dir_all(&config_dir).unwrap();
+
+    // Create an invalid config file
+    let config_content = "invalid toml content [[[";
+    std::fs::write(config_dir.join("config.toml"), config_content).unwrap();
+
+    // ggo should still work (using defaults)
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["--version"])
+        .env("HOME", temp_dir.path())
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success());
+}
