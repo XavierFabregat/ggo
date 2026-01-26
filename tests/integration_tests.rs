@@ -337,3 +337,154 @@ fn test_empty_pattern_lists_all_branches() {
     // Should list all branches
     assert!(output.status.success() || stdout.contains("branch") || stderr.contains("branch"));
 }
+
+#[test]
+fn test_cleanup_show_size() {
+    scopeguard::defer! {
+        let _ = std::env::remove_var("GGO_DATA_DIR");
+    }
+    let test_db_dir = tempfile::tempdir().unwrap();
+    std::env::set_var("GGO_DATA_DIR", test_db_dir.path());
+
+    let ggo = get_ggo_binary();
+
+    // First ensure database exists by running stats (or any command that creates the DB)
+    let _ = Command::new(&ggo)
+        .args(["--stats"])
+        .env("GGO_DATA_DIR", test_db_dir.path())
+        .output()
+        .expect("Failed to initialize database");
+
+    let output = Command::new(&ggo)
+        .args(["cleanup", "--size"])
+        .env("GGO_DATA_DIR", test_db_dir.path())
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if !output.status.success() {
+        eprintln!("Command failed!");
+        eprintln!("stdout: {}", stdout);
+        eprintln!("stderr: {}", stderr);
+    }
+
+    assert!(output.status.success());
+    assert!(stdout.contains("Database size:"));
+    // Should show either KB or MB
+    assert!(stdout.contains("KB") || stdout.contains("MB"));
+}
+
+#[test]
+fn test_cleanup_no_args_shows_help() {
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["cleanup"])
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    assert!(stdout.contains("Database cleanup options:"));
+    assert!(stdout.contains("--deleted"));
+    assert!(stdout.contains("--optimize"));
+    assert!(stdout.contains("--size"));
+}
+
+#[test]
+fn test_cleanup_deleted_branches() {
+    scopeguard::defer! {
+        let _ = std::env::remove_var("GGO_DATA_DIR");
+    }
+    let test_db_dir = tempfile::tempdir().unwrap();
+    std::env::set_var("GGO_DATA_DIR", test_db_dir.path());
+
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["cleanup", "--deleted"])
+        .env("GGO_DATA_DIR", test_db_dir.path())
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    assert!(stdout.contains("Cleaning up deleted branches"));
+    assert!(stdout.contains("Removed"));
+    assert!(stdout.contains("stale branch records"));
+}
+
+#[test]
+fn test_cleanup_old_records() {
+    scopeguard::defer! {
+        let _ = std::env::remove_var("GGO_DATA_DIR");
+    }
+    let test_db_dir = tempfile::tempdir().unwrap();
+    std::env::set_var("GGO_DATA_DIR", test_db_dir.path());
+
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["cleanup", "--older-than", "30"])
+        .env("GGO_DATA_DIR", test_db_dir.path())
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    assert!(stdout.contains("Cleaning up branches older than 30 days"));
+    assert!(stdout.contains("Removed"));
+    assert!(stdout.contains("old branch records"));
+}
+
+#[test]
+fn test_cleanup_optimize() {
+    scopeguard::defer! {
+        let _ = std::env::remove_var("GGO_DATA_DIR");
+    }
+    let test_db_dir = tempfile::tempdir().unwrap();
+    std::env::set_var("GGO_DATA_DIR", test_db_dir.path());
+
+    let ggo = get_ggo_binary();
+    let output = Command::new(&ggo)
+        .args(["cleanup", "--optimize"])
+        .env("GGO_DATA_DIR", test_db_dir.path())
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    assert!(stdout.contains("Optimizing database"));
+    assert!(stdout.contains("Database optimized"));
+    assert!(stdout.contains("VACUUM and ANALYZE complete"));
+}
+
+#[test]
+fn test_cleanup_combined_flags() {
+    scopeguard::defer! {
+        let _ = std::env::remove_var("GGO_DATA_DIR");
+    }
+    let test_db_dir = tempfile::tempdir().unwrap();
+    std::env::set_var("GGO_DATA_DIR", test_db_dir.path());
+
+    let ggo = get_ggo_binary();
+
+    // First ensure database exists
+    let _ = Command::new(&ggo)
+        .args(["--stats"])
+        .env("GGO_DATA_DIR", test_db_dir.path())
+        .output()
+        .expect("Failed to initialize database");
+
+    let output = Command::new(&ggo)
+        .args(["cleanup", "--deleted", "--optimize", "--size"])
+        .env("GGO_DATA_DIR", test_db_dir.path())
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    // Should show all three operations
+    assert!(stdout.contains("Database size:"));
+    assert!(stdout.contains("Cleaning up deleted branches"));
+    assert!(stdout.contains("Optimizing database"));
+}
