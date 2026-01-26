@@ -357,4 +357,107 @@ mod tests {
         assert!(help.contains("--interactive"));
         assert!(help.contains("--stats"));
     }
+
+    // Cleanup command tests
+    #[test]
+    fn test_parse_cleanup_default() {
+        let args = vec!["ggo", "cleanup"];
+        let cli = Cli::parse_from(args);
+
+        match cli.command {
+            Some(Commands::Cleanup {
+                older_than,
+                deleted,
+                optimize,
+                size,
+            }) => {
+                assert_eq!(older_than, 365); // Default value
+                assert!(!deleted);
+                assert!(!optimize);
+                assert!(!size);
+            }
+            _ => panic!("Expected Cleanup command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_cleanup_with_older_than() {
+        let args = vec!["ggo", "cleanup", "--older-than", "90"];
+        let cli = Cli::parse_from(args);
+
+        match cli.command {
+            Some(Commands::Cleanup { older_than, .. }) => {
+                assert_eq!(older_than, 90);
+            }
+            _ => panic!("Expected Cleanup command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_cleanup_deleted() {
+        let args = vec!["ggo", "cleanup", "--deleted"];
+        let cli = Cli::parse_from(args);
+
+        match cli.command {
+            Some(Commands::Cleanup { deleted, .. }) => {
+                assert!(deleted);
+            }
+            _ => panic!("Expected Cleanup command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_cleanup_optimize() {
+        let args = vec!["ggo", "cleanup", "--optimize"];
+        let cli = Cli::parse_from(args);
+
+        match cli.command {
+            Some(Commands::Cleanup { optimize, .. }) => {
+                assert!(optimize);
+            }
+            _ => panic!("Expected Cleanup command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_cleanup_size() {
+        let args = vec!["ggo", "cleanup", "--size"];
+        let cli = Cli::parse_from(args);
+
+        match cli.command {
+            Some(Commands::Cleanup { size, .. }) => {
+                assert!(size);
+            }
+            _ => panic!("Expected Cleanup command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_cleanup_all_flags() {
+        let args = vec![
+            "ggo",
+            "cleanup",
+            "--older-than",
+            "30",
+            "--deleted",
+            "--optimize",
+            "--size",
+        ];
+        let cli = Cli::parse_from(args);
+
+        match cli.command {
+            Some(Commands::Cleanup {
+                older_than,
+                deleted,
+                optimize,
+                size,
+            }) => {
+                assert_eq!(older_than, 30);
+                assert!(deleted);
+                assert!(optimize);
+                assert!(size);
+            }
+            _ => panic!("Expected Cleanup command"),
+        }
+    }
 }
