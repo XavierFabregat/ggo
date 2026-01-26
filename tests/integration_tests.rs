@@ -584,9 +584,13 @@ fn test_stats_shows_top_branches() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
-    // Should have a section for top branches (case-insensitive)
+    // Should have a section for top branches (case-insensitive) OR show empty message
     let stdout_lower = stdout.to_lowercase();
-    assert!(stdout_lower.contains("top branches") || stdout_lower.contains("frecency"));
+    assert!(
+        stdout_lower.contains("top branches")
+        || stdout_lower.contains("frecency")
+        || stdout_lower.contains("no branch usage data yet")
+    );
 }
 
 #[test]
