@@ -2,6 +2,13 @@
 name = "ggo"
 version = "0.2.1"
 edition = "2021"
+description = "Smart git branch navigation with frecency-based ranking"
+repository = "https://github.com/XavierFabregat/ggo"
+homepage = "https://github.com/XavierFabregat/ggo"
+documentation = "https://github.com/XavierFabregat/ggo"
+readme = "README.md"
+keywords = ["git", "cli", "productivity", "frecency"]
+categories = ["command-line-utilities", "development-tools"]
 license = "MIT"
 
 [dependencies]
