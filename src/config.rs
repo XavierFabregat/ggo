@@ -66,6 +66,7 @@ impl Default for BehaviorConfig {
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -84,11 +85,11 @@ impl Config {
             return Ok(Self::default());
         }
 
-        let content = std::fs::read_to_string(&config_path)
-            .context("Failed to read configuration file")?;
+        let content =
+            std::fs::read_to_string(&config_path).context("Failed to read configuration file")?;
 
-        let config: Config = toml::from_str(&content)
-            .context("Failed to parse configuration file")?;
+        let config: Config =
+            toml::from_str(&content).context("Failed to parse configuration file")?;
 
         Ok(config)
     }
@@ -99,20 +100,18 @@ impl Config {
             .context("Could not determine config directory")?
             .join("ggo");
 
-        std::fs::create_dir_all(&config_dir)
-            .context("Failed to create config directory")?;
+        std::fs::create_dir_all(&config_dir).context("Failed to create config directory")?;
 
         Ok(config_dir.join("config.toml"))
     }
 
     /// Save configuration to file
+    #[allow(dead_code)]
     pub fn save(&self) -> Result<()> {
         let config_path = Self::config_path()?;
-        let content = toml::to_string_pretty(self)
-            .context("Failed to serialize configuration")?;
+        let content = toml::to_string_pretty(self).context("Failed to serialize configuration")?;
 
-        std::fs::write(&config_path, content)
-            .context("Failed to write configuration file")?;
+        std::fs::write(&config_path, content).context("Failed to write configuration file")?;
 
         Ok(())
     }

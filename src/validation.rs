@@ -1,7 +1,9 @@
 use anyhow::{bail, Result};
 use std::path::Path;
 
-use crate::constants::validation::*;
+use crate::constants::validation::{
+    MAX_ALIAS_LENGTH, MAX_BRANCH_NAME_LENGTH, MAX_PATTERN_LENGTH, MAX_REPO_PATH_LENGTH,
+};
 
 /// Validate that a branch name is safe and valid according to git rules
 pub fn validate_branch_name(name: &str) -> Result<()> {
