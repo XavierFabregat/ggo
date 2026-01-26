@@ -16,7 +16,10 @@
       "Bash(ggo --list:*)",
       "Bash(ggo fa:*)",
       "Bash(cargo fmt:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(chmod:*)",
+      "Bash(./install.sh:*)",
+      "Bash(shellcheck:*)"
     ],
     "deny": [],
     "ask": []

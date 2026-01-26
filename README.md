@@ -19,6 +19,25 @@
 
 ## Installation
 
+### Quick Install (Recommended)
+
+```bash
+curl -sSf https://raw.githubusercontent.com/XavierFabregat/ggo/master/install.sh | bash
+```
+
+This script will:
+- Detect your OS and architecture
+- Install Rust if needed (via rustup)
+- Try installing from crates.io first (faster)
+- Fall back to building from source if needed
+- Install to `~/.local/bin` (customizable with `GGO_INSTALL_DIR`)
+
+### From Crates.io
+
+```bash
+cargo install ggo
+```
+
 ### From Source
 
 ```bash
