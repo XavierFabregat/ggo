@@ -2,8 +2,9 @@
 
 > A `zoxide`-style tool for intelligent git branch navigation with frecency-based ranking and aliases
 
+[![Crates.io](https://img.shields.io/crates/v/ggo.svg)](https://crates.io/crates/ggo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-184%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-205%20passing-brightgreen.svg)]()
 
 ## What is ggo?
 
@@ -19,7 +20,27 @@
 
 ## Installation
 
-### Quick Install (Recommended)
+### Homebrew (macOS/Linux) - Recommended
+
+```bash
+brew install XavierFabregat/tap/ggo
+```
+
+Or add the tap first:
+```bash
+brew tap XavierFabregat/tap
+brew install ggo
+```
+
+**Fast installation** (~2 seconds) with pre-built binaries. No Rust required!
+
+### Cargo (Rust Users)
+
+```bash
+cargo install ggo
+```
+
+### Quick Install Script
 
 ```bash
 curl -sSf https://raw.githubusercontent.com/XavierFabregat/ggo/master/install.sh | bash
@@ -32,12 +53,6 @@ This script will:
 - Fall back to building from source if needed
 - Install to `~/.local/bin` (customizable with `GGO_INSTALL_DIR`)
 
-### From Crates.io
-
-```bash
-cargo install ggo
-```
-
 ### From Source
 
 ```bash
@@ -48,8 +63,8 @@ cargo install --path .
 
 ### Requirements
 
-- Rust 1.70+ (stable)
 - Git 2.0+
+- For non-Homebrew installs: Rust 1.70+ (stable)
 
 ## Quick Start
 
