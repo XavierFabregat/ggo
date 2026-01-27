@@ -52,8 +52,8 @@ jobs:
           TEST_COUNT=$(cargo test -- --list 2>&1 | grep -E '^test ' | wc -l | tr -d ' ')
           echo "Found $TEST_COUNT tests"
 
-          # Update README badge
-          sed -i.bak "s/tests-[0-9]\+%20passing/tests-${TEST_COUNT}%20passing/" README.md
+          # Update README badge (compatible with both GNU and BSD sed)
+          sed -i.bak -E "s/tests-[0-9]+%20passing/tests-${TEST_COUNT}%20passing/" README.md
           rm -f README.md.bak
 
           # Check if README was modified
