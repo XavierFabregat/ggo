@@ -343,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "ggo"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "cargo-husky",
