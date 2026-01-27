@@ -1,6 +1,7 @@
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+use crate::error::{GgoError, Result};
 
 /// Configuration for ggo behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,11 +86,11 @@ impl Config {
             return Ok(Self::default());
         }
 
-        let content =
-            std::fs::read_to_string(&config_path).context("Failed to read configuration file")?;
+        let content = std::fs::read_to_string(&config_path)
+            .map_err(|e| GgoError::ConfigError(format!("Failed to read configuration file: {}", e)))?;
 
-        let config: Config =
-            toml::from_str(&content).context("Failed to parse configuration file")?;
+        let config: Config = toml::from_str(&content)
+            .map_err(|e| GgoError::ConfigError(format!("Failed to parse TOML: {}", e)))?;
 
         Ok(config)
     }
@@ -97,10 +98,11 @@ impl Config {
     /// Get the path to the config file
     pub fn config_path() -> Result<PathBuf> {
         let config_dir = dirs::config_dir()
-            .context("Could not determine config directory")?
+            .ok_or_else(|| GgoError::ConfigError("Could not determine config directory".to_string()))?
             .join("ggo");
 
-        std::fs::create_dir_all(&config_dir).context("Failed to create config directory")?;
+        std::fs::create_dir_all(&config_dir)
+            .map_err(|e| GgoError::ConfigError(format!("Failed to create config directory: {}", e)))?;
 
         Ok(config_dir.join("config.toml"))
     }
@@ -109,9 +111,11 @@ impl Config {
     #[allow(dead_code)]
     pub fn save(&self) -> Result<()> {
         let config_path = Self::config_path()?;
-        let content = toml::to_string_pretty(self).context("Failed to serialize configuration")?;
+        let content = toml::to_string_pretty(self)
+            .map_err(|e| GgoError::ConfigError(format!("Failed to serialize configuration: {}", e)))?;
 
-        std::fs::write(&config_path, content).context("Failed to write configuration file")?;
+        std::fs::write(&config_path, content)
+            .map_err(|e| GgoError::ConfigError(format!("Failed to write configuration file: {}", e)))?;
 
         Ok(())
     }
@@ -215,7 +219,7 @@ mod tests {
             half_life_days = "not a number"
         "#;
 
-        let result: Result<Config, _> = toml::from_str(toml_str);
+        let result: std::result::Result<Config, _> = toml::from_str(toml_str);
         assert!(result.is_err());
     }
 }

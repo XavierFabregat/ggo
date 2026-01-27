@@ -1,77 +1,119 @@
-use anyhow::{bail, Result};
 use std::path::Path;
 
 use crate::constants::validation::{
     MAX_ALIAS_LENGTH, MAX_BRANCH_NAME_LENGTH, MAX_PATTERN_LENGTH, MAX_REPO_PATH_LENGTH,
 };
+use crate::error::{GgoError, Result};
 
 /// Validate that a branch name is safe and valid according to git rules
 pub fn validate_branch_name(name: &str) -> Result<()> {
     if name.is_empty() {
-        bail!("Branch name cannot be empty");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Branch name cannot be empty".to_string(),
+        ));
     }
 
     if name.len() > MAX_BRANCH_NAME_LENGTH {
-        bail!(
-            "Branch name too long (max {} characters)",
-            MAX_BRANCH_NAME_LENGTH
-        );
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            format!("Branch name too long (max {} characters)", MAX_BRANCH_NAME_LENGTH),
+        ));
     }
 
     // Check for dangerous characters that could cause issues
     let dangerous_chars = ['\0', '\n', '\r'];
     if name.chars().any(|c| dangerous_chars.contains(&c)) {
-        bail!("Branch name contains invalid characters (null, newline, or carriage return)");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Contains invalid characters (null, newline, or carriage return)".to_string(),
+        ));
     }
 
     // Git branch name restrictions
     if name.starts_with('-') {
-        bail!("Branch name cannot start with '-' (conflicts with git flags)");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Cannot start with '-' (conflicts with git flags)".to_string(),
+        ));
     }
 
     if name.starts_with('.') {
-        bail!("Branch name cannot start with '.'");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Cannot start with '.'".to_string(),
+        ));
     }
 
     if name.contains("..") {
-        bail!("Branch name cannot contain '..' (git path traversal restriction)");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Cannot contain '..' (git path traversal restriction)".to_string(),
+        ));
     }
 
     if name.ends_with('/') {
-        bail!("Branch name cannot end with '/'");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Cannot end with '/'".to_string(),
+        ));
     }
 
     if name.ends_with('.') {
-        bail!("Branch name cannot end with '.'");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Cannot end with '.'".to_string(),
+        ));
     }
 
     if name.contains("//") {
-        bail!("Branch name cannot contain '//' (double slashes)");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Cannot contain '//' (double slashes)".to_string(),
+        ));
     }
 
     if name.contains(' ') {
-        bail!("Branch name cannot contain spaces");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Cannot contain spaces".to_string(),
+        ));
     }
 
     // Check for other problematic characters
     if name.contains('@') && name.contains('{') {
-        bail!("Branch name cannot contain '@{{' (git revision syntax)");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Cannot contain '@{' (git revision syntax)".to_string(),
+        ));
     }
 
     if name.contains('~') {
-        bail!("Branch name cannot contain '~' (git revision syntax)");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Cannot contain '~' (git revision syntax)".to_string(),
+        ));
     }
 
     if name.contains('^') {
-        bail!("Branch name cannot contain '^' (git revision syntax)");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Cannot contain '^' (git revision syntax)".to_string(),
+        ));
     }
 
     if name.contains(':') {
-        bail!("Branch name cannot contain ':' (git ref syntax)");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Cannot contain ':' (git ref syntax)".to_string(),
+        ));
     }
 
     if name.contains('?') || name.contains('*') || name.contains('[') {
-        bail!("Branch name cannot contain wildcards (?, *, [)");
+        return Err(GgoError::InvalidBranchName(
+            name.to_string(),
+            "Cannot contain wildcards (?, *, [)".to_string(),
+        ));
     }
 
     Ok(())
@@ -80,36 +122,51 @@ pub fn validate_branch_name(name: &str) -> Result<()> {
 /// Validate that a repo path is safe and valid
 pub fn validate_repo_path(path: &str) -> Result<()> {
     if path.is_empty() {
-        bail!("Repository path cannot be empty");
+        return Err(GgoError::InvalidRepoPath(
+            path.to_string(),
+            "Repository path cannot be empty".to_string(),
+        ));
     }
 
     if path.len() > MAX_REPO_PATH_LENGTH {
-        bail!(
-            "Repository path too long (max {} characters)",
-            MAX_REPO_PATH_LENGTH
-        );
+        return Err(GgoError::InvalidRepoPath(
+            path.to_string(),
+            format!("Path too long (max {} characters)", MAX_REPO_PATH_LENGTH),
+        ));
     }
 
     // Check for null bytes
     if path.contains('\0') {
-        bail!("Repository path contains null bytes");
+        return Err(GgoError::InvalidRepoPath(
+            path.to_string(),
+            "Path contains null bytes".to_string(),
+        ));
     }
 
     let path_obj = Path::new(path);
 
     // Must be absolute path for safety
     if !path_obj.is_absolute() {
-        bail!("Repository path must be absolute (got relative path)");
+        return Err(GgoError::InvalidRepoPath(
+            path.to_string(),
+            "Path must be absolute (got relative path)".to_string(),
+        ));
     }
 
     // Verify it exists
     if !path_obj.exists() {
-        bail!("Repository path does not exist: {}", path);
+        return Err(GgoError::InvalidRepoPath(
+            path.to_string(),
+            "Path does not exist".to_string(),
+        ));
     }
 
     // Must be a directory
     if !path_obj.is_dir() {
-        bail!("Repository path is not a directory: {}", path);
+        return Err(GgoError::InvalidRepoPath(
+            path.to_string(),
+            "Path is not a directory".to_string(),
+        ));
     }
 
     Ok(())
@@ -118,15 +175,18 @@ pub fn validate_repo_path(path: &str) -> Result<()> {
 /// Validate search pattern
 pub fn validate_pattern(pattern: &str) -> Result<()> {
     if pattern.len() > MAX_PATTERN_LENGTH {
-        bail!(
-            "Search pattern too long (max {} characters)",
-            MAX_PATTERN_LENGTH
-        );
+        return Err(GgoError::InvalidPattern(
+            pattern.to_string(),
+            format!("Pattern too long (max {} characters)", MAX_PATTERN_LENGTH),
+        ));
     }
 
     // Check for null bytes
     if pattern.contains('\0') {
-        bail!("Search pattern contains null bytes");
+        return Err(GgoError::InvalidPattern(
+            pattern.to_string(),
+            "Pattern contains null bytes".to_string(),
+        ));
     }
 
     // Pattern can be empty (matches all branches)
@@ -139,20 +199,32 @@ pub fn validate_pattern(pattern: &str) -> Result<()> {
 /// Validate alias name (more strict than branch names)
 pub fn validate_alias_name(alias: &str) -> Result<()> {
     if alias.is_empty() {
-        bail!("Alias name cannot be empty");
+        return Err(GgoError::InvalidBranchName(
+            alias.to_string(),
+            "Alias name cannot be empty".to_string(),
+        ));
     }
 
     if alias.len() > MAX_ALIAS_LENGTH {
-        bail!("Alias name too long (max {} characters)", MAX_ALIAS_LENGTH);
+        return Err(GgoError::InvalidBranchName(
+            alias.to_string(),
+            format!("Alias name too long (max {} characters)", MAX_ALIAS_LENGTH),
+        ));
     }
 
     if alias.starts_with('-') {
-        bail!("Alias name cannot start with '-' (conflicts with command flags)");
+        return Err(GgoError::InvalidBranchName(
+            alias.to_string(),
+            "Cannot start with '-' (conflicts with command flags)".to_string(),
+        ));
     }
 
     // Check if alias is a reserved word
     if matches!(alias, "stats" | "alias" | "list" | "remove") {
-        bail!("Alias name '{}' is reserved and cannot be used", alias);
+        return Err(GgoError::InvalidBranchName(
+            alias.to_string(),
+            format!("'{}' is reserved and cannot be used as alias", alias),
+        ));
     }
 
     // Only allow alphanumeric, dash, and underscore
@@ -160,7 +232,10 @@ pub fn validate_alias_name(alias: &str) -> Result<()> {
         .chars()
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
     {
-        bail!("Alias name must contain only alphanumeric characters, dash (-), or underscore (_)");
+        return Err(GgoError::InvalidBranchName(
+            alias.to_string(),
+            "Must contain only alphanumeric characters, dash (-), or underscore (_)".to_string(),
+        ));
     }
 
     Ok(())
