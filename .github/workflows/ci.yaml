@@ -44,6 +44,31 @@ jobs:
       - name: Run tests in release mode
         run: cargo test --release --all-features
 
+      - name: Update README test count badge
+        if: github.ref == 'refs/heads/master'
+        run: |
+          # Count total tests
+          TEST_COUNT=$(cargo test -- --list 2>&1 | grep -E '^test ' | wc -l | tr -d ' ')
+          echo "Found $TEST_COUNT tests"
+
+          # Update README badge
+          sed -i.bak "s/tests-[0-9]\+%20passing/tests-${TEST_COUNT}%20passing/" README.md
+          rm -f README.md.bak
+
+          # Check if README was modified
+          if git diff --quiet README.md; then
+            echo "README test count is already up to date ($TEST_COUNT)"
+          else
+            echo "Updating README test count to $TEST_COUNT"
+
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+
+            git add README.md
+            git commit -m "Auto-update test count badge to $TEST_COUNT [skip ci]"
+            git push origin master
+          fi
+
   lint:
     name: Lint Check
     runs-on: ubuntu-latest
