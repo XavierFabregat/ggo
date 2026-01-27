@@ -105,3 +105,26 @@ jobs:
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+  test-install-script:
+    name: Test Install Script on ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test install script syntax
+        run: bash -n install.sh
+
+      - name: Test install script execution
+        run: |
+          export GGO_INSTALL_DIR=/tmp/ggo-ci-test
+          bash install.sh
+
+      - name: Verify installation
+        run: |
+          test -f /tmp/ggo-ci-test/ggo
+          /tmp/ggo-ci-test/ggo --version
+
