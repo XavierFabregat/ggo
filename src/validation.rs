@@ -17,7 +17,10 @@ pub fn validate_branch_name(name: &str) -> Result<()> {
     if name.len() > MAX_BRANCH_NAME_LENGTH {
         return Err(GgoError::InvalidBranchName(
             name.to_string(),
-            format!("Branch name too long (max {} characters)", MAX_BRANCH_NAME_LENGTH),
+            format!(
+                "Branch name too long (max {} characters)",
+                MAX_BRANCH_NAME_LENGTH
+            ),
         ));
     }
 

@@ -47,9 +47,9 @@ pub fn checkout(branch: &str) -> Result<()> {
 pub fn get_repo_root() -> Result<String> {
     let repo = Repository::open_from_env().map_err(|_| GgoError::NotGitRepository)?;
 
-    let workdir = repo
-        .workdir()
-        .ok_or_else(|| GgoError::Other("Repository has no working directory (bare repository?)".to_string()))?;
+    let workdir = repo.workdir().ok_or_else(|| {
+        GgoError::Other("Repository has no working directory (bare repository?)".to_string())
+    })?;
 
     let path = workdir
         .to_str()
@@ -69,7 +69,9 @@ pub fn get_current_branch() -> Result<String> {
     let head = repo.head().map_err(|_| GgoError::NotGitRepository)?;
 
     if !head.is_branch() {
-        return Err(GgoError::Other("Not on a branch (detached HEAD)".to_string()));
+        return Err(GgoError::Other(
+            "Not on a branch (detached HEAD)".to_string(),
+        ));
     }
 
     let branch_name = head

@@ -37,7 +37,9 @@ pub enum GgoError {
     UserCancelled,
 
     #[allow(dead_code)]
-    #[error("Alias '{0}' not found in this repository\n\nRun 'ggo alias --list' to see all aliases.")]
+    #[error(
+        "Alias '{0}' not found in this repository\n\nRun 'ggo alias --list' to see all aliases."
+    )]
     AliasNotFound(String),
 
     #[error("Unsupported shell: '{0}'\n\nSupported shells:\n  • bash\n  • zsh\n  • fish\n  • powershell\n  • elvish\n\nExample: ggo --generate-completion bash")]
@@ -197,7 +199,10 @@ mod tests {
         let git_err = git2::Error::from_str("repository not found");
         let ggo_err: GgoError = git_err.into();
         // Should convert to appropriate error
-        assert!(matches!(ggo_err, GgoError::NotGitRepository | GgoError::Other(_)));
+        assert!(matches!(
+            ggo_err,
+            GgoError::NotGitRepository | GgoError::Other(_)
+        ));
     }
 
     #[test]
