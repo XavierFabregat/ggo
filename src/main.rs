@@ -302,8 +302,8 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
 fn checkout_previous_branch() -> Result<()> {
     let repo_path = git::get_repo_root()?;
 
-    let previous_branch = storage::get_previous_branch(&repo_path)?
-        .ok_or(GgoError::NoPreviousBranch)?;
+    let previous_branch =
+        storage::get_previous_branch(&repo_path)?.ok_or(GgoError::NoPreviousBranch)?;
 
     // Re-verify branch exists before checkout (prevent race condition)
     let current_branches = git::get_branches()?;
@@ -537,8 +537,7 @@ fn find_and_checkout_branch(
             println!("Using alias '{}' → '{}'", pattern, branch_name);
 
             // Re-verify branch exists before checkout (prevent race condition)
-            let current_branches =
-                git::get_branches()?;
+            let current_branches = git::get_branches()?;
 
             if !current_branches.contains(&branch_name) {
                 return Err(GgoError::BranchNotFound(branch_name));
@@ -625,8 +624,7 @@ fn find_and_checkout_branch(
     };
 
     // Re-verify branch exists before checkout (prevent race condition)
-    let current_branches =
-        git::get_branches()?;
+    let current_branches = git::get_branches()?;
 
     if !current_branches.contains(&branch_to_checkout) {
         return Err(GgoError::BranchNotFound(branch_to_checkout));

@@ -76,7 +76,9 @@ pub fn select_branch(branches: &[String], records: &[BranchRecord]) -> Result<St
 
     if options.is_empty() {
         use crate::error::GgoError;
-        return Err(GgoError::Other("No branches available for selection".to_string()));
+        return Err(GgoError::Other(
+            "No branches available for selection".to_string(),
+        ));
     }
 
     // Show header
