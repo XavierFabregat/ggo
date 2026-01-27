@@ -4,7 +4,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/ggo.svg)](https://crates.io/crates/ggo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-205%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-271%20passing-brightgreen.svg)]()
 
 ## What is ggo?
 
