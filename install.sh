@@ -69,10 +69,23 @@ install_rust() {
 
 install_from_crates_io() {
     print_info "Installing ggo from crates.io..."
-    if cargo install ggo; then
+
+    # Create install directory if it doesn't exist
+    mkdir -p "$INSTALL_DIR"
+
+    # Install to a temp location first (cargo always uses <root>/bin/)
+    TEMP_ROOT=$(mktemp -d)
+
+    if cargo install ggo --root "$TEMP_ROOT"; then
+        # Move the binary to the desired location
+        mv "$TEMP_ROOT/bin/ggo" "$INSTALL_DIR/ggo"
+        chmod +x "$INSTALL_DIR/ggo"
+        rm -rf "$TEMP_ROOT"
+
         print_success "ggo installed successfully via cargo"
         return 0
     else
+        rm -rf "$TEMP_ROOT"
         print_warning "Failed to install from crates.io, will try building from source"
         return 1
     fi
