@@ -46,6 +46,7 @@ jobs:
 
       - name: Update README test count badge
         if: github.ref == 'refs/heads/master'
+        shell: bash
         run: |
           # Count total tests
           TEST_COUNT=$(cargo test -- --list 2>&1 | grep -E '^test ' | wc -l | tr -d ' ')
