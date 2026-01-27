@@ -1,16 +1,16 @@
-use anyhow::{bail, Context, Result};
 use git2::Repository;
 
+use crate::error::{GgoError, Result};
 use crate::validation;
 
 /// Get all local git branches in the current repository
 pub fn get_branches() -> Result<Vec<String>> {
-    let repo = Repository::open_from_env().context("Not a git repository")?;
+    let repo = Repository::open_from_env().map_err(|_| GgoError::NotGitRepository)?;
 
     let mut branches = Vec::new();
 
     for branch in repo.branches(Some(git2::BranchType::Local))? {
-        let (branch, _) = branch.context("Failed to read branch")?;
+        let (branch, _) = branch?;
         if let Some(name) = branch.name()? {
             branches.push(name.to_string());
         }
@@ -22,59 +22,59 @@ pub fn get_branches() -> Result<Vec<String>> {
 /// Checkout the specified branch
 pub fn checkout(branch: &str) -> Result<()> {
     // Validate branch name before attempting checkout
-    validation::validate_branch_name(branch).context("Cannot checkout invalid branch name")?;
+    validation::validate_branch_name(branch)?;
 
-    let repo = Repository::open_from_env().context("Not a git repository")?;
+    let repo = Repository::open_from_env().map_err(|_| GgoError::NotGitRepository)?;
 
     // Find the branch reference
     let refname = format!("refs/heads/{}", branch);
     let obj = repo
         .revparse_single(&refname)
-        .context(format!("Branch '{}' not found", branch))?;
+        .map_err(|_| GgoError::BranchNotFound(branch.to_string()))?;
 
     // Checkout the branch
     repo.checkout_tree(&obj, None)
-        .context(format!("Failed to checkout branch '{}'", branch))?;
+        .map_err(|e| GgoError::CheckoutFailed(branch.to_string(), e.to_string()))?;
 
     // Update HEAD to point to the branch
     repo.set_head(&refname)
-        .context(format!("Failed to set HEAD to branch '{}'", branch))?;
+        .map_err(|e| GgoError::CheckoutFailed(branch.to_string(), e.to_string()))?;
 
     Ok(())
 }
 
 /// Get the root path of the current git repository
 pub fn get_repo_root() -> Result<String> {
-    let repo = Repository::open_from_env().context("Not a git repository")?;
+    let repo = Repository::open_from_env().map_err(|_| GgoError::NotGitRepository)?;
 
     let workdir = repo
         .workdir()
-        .ok_or_else(|| anyhow::anyhow!("Repository has no working directory (bare repository?)"))?;
+        .ok_or_else(|| GgoError::Other("Repository has no working directory (bare repository?)".to_string()))?;
 
     let path = workdir
         .to_str()
-        .ok_or_else(|| anyhow::anyhow!("Repository path contains invalid UTF-8"))?
+        .ok_or_else(|| GgoError::Other("Repository path contains invalid UTF-8".to_string()))?
         .to_string();
 
     // Validate the returned repo path
-    validation::validate_repo_path(&path).context("Git returned invalid repository path")?;
+    validation::validate_repo_path(&path)?;
 
     Ok(path)
 }
 
 /// Get the name of the current branch
 pub fn get_current_branch() -> Result<String> {
-    let repo = Repository::open_from_env().context("Not a git repository")?;
+    let repo = Repository::open_from_env().map_err(|_| GgoError::NotGitRepository)?;
 
-    let head = repo.head().context("Could not get HEAD reference")?;
+    let head = repo.head().map_err(|_| GgoError::NotGitRepository)?;
 
     if !head.is_branch() {
-        bail!("Not on a branch (detached HEAD)");
+        return Err(GgoError::Other("Not on a branch (detached HEAD)".to_string()));
     }
 
     let branch_name = head
         .shorthand()
-        .ok_or_else(|| anyhow::anyhow!("Invalid branch name"))?;
+        .ok_or_else(|| GgoError::Other("Invalid branch name".to_string()))?;
 
     Ok(branch_name.to_string())
 }
@@ -82,6 +82,7 @@ pub fn get_current_branch() -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Context;
     use std::fs;
     use std::path::Path;
 
@@ -123,7 +124,7 @@ mod tests {
     }
 
     // Helper to get branches from a specific repo path
-    fn get_branches_from_path(path: &Path) -> Result<Vec<String>> {
+    fn get_branches_from_path(path: &Path) -> anyhow::Result<Vec<String>> {
         let repo = Repository::open(path).context("Not a git repository")?;
 
         let mut branches = Vec::new();
@@ -193,7 +194,7 @@ mod tests {
     }
 
     // Helper to checkout in a specific repo
-    fn checkout_in_repo(path: &Path, branch: &str) -> Result<()> {
+    fn checkout_in_repo(path: &Path, branch: &str) -> anyhow::Result<()> {
         validation::validate_branch_name(branch).context("Cannot checkout invalid branch name")?;
 
         let repo = Repository::open(path).context("Not a git repository")?;
@@ -241,7 +242,7 @@ mod tests {
     }
 
     // Helper to discover repo root from a subdirectory
-    fn get_repo_root_from_path(path: &Path) -> Result<String> {
+    fn get_repo_root_from_path(path: &Path) -> anyhow::Result<String> {
         let repo = Repository::discover(path).context("Not a git repository")?;
 
         let workdir = repo.workdir().ok_or_else(|| {
@@ -289,7 +290,9 @@ mod tests {
     }
 
     // Helper to get current branch from a specific repo
-    fn get_current_branch_from_repo(path: &Path) -> Result<String> {
+    fn get_current_branch_from_repo(path: &Path) -> anyhow::Result<String> {
+        use anyhow::bail;
+
         let repo = Repository::open(path).context("Not a git repository")?;
 
         let head = repo.head().context("Could not get HEAD reference")?;

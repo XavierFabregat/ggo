@@ -1,6 +1,6 @@
-use anyhow::Result;
 use inquire::Select;
 
+use crate::error::Result;
 use crate::frecency;
 use crate::storage::BranchRecord;
 
@@ -75,7 +75,8 @@ pub fn select_branch(branches: &[String], records: &[BranchRecord]) -> Result<St
     }
 
     if options.is_empty() {
-        anyhow::bail!("No branches available for selection");
+        use crate::error::GgoError;
+        return Err(GgoError::Other("No branches available for selection".to_string()));
     }
 
     // Show header

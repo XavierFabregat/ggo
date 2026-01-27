@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod constants;
+mod error;
 mod frecency;
 mod git;
 mod interactive;
@@ -8,7 +9,6 @@ mod matcher;
 mod storage;
 mod validation;
 
-use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser};
 use clap_complete::{generate, Shell};
 use std::collections::HashMap;
@@ -20,8 +20,9 @@ use tracing::{debug, warn};
 
 use cli::{Cli, Commands};
 use constants::scoring::FRECENCY_MULTIPLIER;
+use error::{GgoError, Result};
 
-fn main() -> Result<()> {
+fn main() {
     // Initialize tracing for structured logging
     // Set RUST_LOG=debug for verbose output, or RUST_LOG=trace for very verbose
     tracing_subscriber::fmt()
@@ -33,6 +34,13 @@ fn main() -> Result<()> {
         .with_level(true)
         .init();
 
+    if let Err(e) = run() {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
     debug!("CLI arguments: {:?}", cli);
 
@@ -91,7 +99,7 @@ fn main() -> Result<()> {
     let pattern = cli
         .pattern
         .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("Pattern argument is required\n\nUsage: ggo <pattern>\nTry 'ggo --help' for more information"))?;
+        .ok_or_else(|| GgoError::Other("Pattern argument is required\n\nUsage: ggo <pattern>\nTry 'ggo --help' for more information".to_string()))?;
 
     // Handle the special '-' pattern to go back to previous branch
     if pattern == "-" {
@@ -100,7 +108,7 @@ fn main() -> Result<()> {
     }
 
     // Validate search pattern
-    validation::validate_pattern(pattern).context("Invalid search pattern")?;
+    validation::validate_pattern(pattern)?;
 
     if cli.list {
         list_matching_branches(pattern, cli.ignore_case, !cli.no_fuzzy)?;
@@ -222,7 +230,7 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 
 fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> Result<()> {
     let branches = git::get_branches()?;
-    let repo_path = git::get_repo_root().context("Failed to determine git repository root")?;
+    let repo_path = git::get_repo_root()?;
 
     // Try to load branch history, but continue without it if it fails
     let records = match storage::get_branch_records(&repo_path) {
@@ -239,10 +247,7 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
         let fuzzy_matches = matcher::fuzzy_filter_branches(&branches, pattern, ignore_case);
 
         if fuzzy_matches.is_empty() {
-            bail!(
-                "No branches found matching '{}'\n\nTry:\n  • Using a different pattern\n  • Running 'git branch' to see all branches\n  • Using 'ggo --list \"\"' to list all branches",
-                pattern
-            );
+            return Err(GgoError::NoMatchingBranches(pattern.to_string()));
         }
 
         combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records)
@@ -251,10 +256,7 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
         let matches = matcher::filter_branches(&branches, pattern, ignore_case);
 
         if matches.is_empty() {
-            bail!(
-                "No branches found matching '{}'\n\nTry:\n  • Using a different pattern\n  • Enabling fuzzy matching (remove --no-fuzzy flag)\n  • Running 'git branch' to see all branches",
-                pattern
-            );
+            return Err(GgoError::NoMatchingBranches(pattern.to_string()));
         }
 
         let match_strings: Vec<String> = matches.iter().map(|s| s.to_string()).collect();
@@ -300,21 +302,14 @@ fn list_matching_branches(pattern: &str, ignore_case: bool, use_fuzzy: bool) -> 
 fn checkout_previous_branch() -> Result<()> {
     let repo_path = git::get_repo_root()?;
 
-    let previous_branch = storage::get_previous_branch(&repo_path)?.ok_or_else(|| {
-        anyhow::anyhow!(
-            "No previous branch found\n\nYou haven't switched branches yet in this repository"
-        )
-    })?;
+    let previous_branch = storage::get_previous_branch(&repo_path)?
+        .ok_or(GgoError::NoPreviousBranch)?;
 
     // Re-verify branch exists before checkout (prevent race condition)
-    let current_branches =
-        git::get_branches().context("Failed to verify branch list before checkout")?;
+    let current_branches = git::get_branches()?;
 
     if !current_branches.contains(&previous_branch) {
-        bail!(
-            "Branch '{}' no longer exists\n\nYour previous branch may have been deleted.\nRun 'git branch' to see available branches.",
-            previous_branch
-        );
+        return Err(GgoError::BranchNotFound(previous_branch));
     }
 
     // Save current branch before switching
@@ -402,10 +397,7 @@ fn generate_completion(shell_name: &str) -> Result<()> {
         "fish" => Shell::Fish,
         "powershell" | "pwsh" => Shell::PowerShell,
         "elvish" => Shell::Elvish,
-        _ => bail!(
-            "Unsupported shell: '{}'\n\nSupported shells:\n  • bash\n  • zsh\n  • fish\n  • powershell\n  • elvish\n\nExample: ggo --generate-completion bash",
-            shell_name
-        ),
+        _ => return Err(GgoError::InvalidShell(shell_name.to_string())),
     };
 
     let mut cmd = Cli::command();
@@ -438,7 +430,7 @@ fn handle_alias_command(
     }
 
     // Alias is required for other operations
-    let alias = alias.ok_or_else(|| anyhow::anyhow!("Alias name is required"))?;
+    let alias = alias.ok_or_else(|| GgoError::Other("Alias name is required".to_string()))?;
 
     // Handle --remove flag
     if remove {
@@ -450,18 +442,15 @@ fn handle_alias_command(
     // If branch is provided, create/update alias
     if let Some(branch_name) = branch {
         // Validate alias name
-        validation::validate_alias_name(alias).context("Invalid alias name")?;
+        validation::validate_alias_name(alias)?;
 
         // Validate branch name
-        validation::validate_branch_name(branch_name).context("Invalid branch name")?;
+        validation::validate_branch_name(branch_name)?;
 
         // Validate that branch exists
         let branches = git::get_branches()?;
         if !branches.contains(&branch_name.to_string()) {
-            bail!(
-                "Branch '{}' does not exist in this repository\n\nRun 'git branch' to see available branches",
-                branch_name
-            );
+            return Err(GgoError::BranchNotFound(branch_name.to_string()));
         }
 
         // Create/update the alias
@@ -526,7 +515,7 @@ fn find_and_checkout_branch(
     config: &config::Config,
 ) -> Result<String> {
     let branches = git::get_branches()?;
-    let repo_path = git::get_repo_root().context("Failed to determine git repository root")?;
+    let repo_path = git::get_repo_root()?;
 
     // Try to load branch history, but continue without it if it fails
     let records = match storage::get_branch_records(&repo_path) {
@@ -549,13 +538,10 @@ fn find_and_checkout_branch(
 
             // Re-verify branch exists before checkout (prevent race condition)
             let current_branches =
-                git::get_branches().context("Failed to verify branch list before checkout")?;
+                git::get_branches()?;
 
             if !current_branches.contains(&branch_name) {
-                bail!(
-                    "Branch '{}' no longer exists\n\nIt may have been deleted after alias lookup.\nRun 'git branch' to see available branches.",
-                    branch_name
-                );
+                return Err(GgoError::BranchNotFound(branch_name));
             }
 
             // Checkout the aliased branch directly
@@ -592,7 +578,7 @@ fn find_and_checkout_branch(
         let fuzzy_matches = matcher::fuzzy_filter_branches(&branches, pattern, ignore_case);
 
         if fuzzy_matches.is_empty() {
-            bail!("No branch found matching '{}'", pattern);
+            return Err(GgoError::NoMatchingBranches(pattern.to_string()));
         }
 
         combine_fuzzy_and_frecency_scores(&fuzzy_matches, &records)
@@ -601,7 +587,7 @@ fn find_and_checkout_branch(
         let matches = matcher::filter_branches(&branches, pattern, ignore_case);
 
         if matches.is_empty() {
-            bail!("No branch found matching '{}'", pattern);
+            return Err(GgoError::NoMatchingBranches(pattern.to_string()));
         }
 
         let match_strings: Vec<String> = matches.iter().map(|s| s.to_string()).collect();
@@ -640,13 +626,10 @@ fn find_and_checkout_branch(
 
     // Re-verify branch exists before checkout (prevent race condition)
     let current_branches =
-        git::get_branches().context("Failed to verify branch list before checkout")?;
+        git::get_branches()?;
 
     if !current_branches.contains(&branch_to_checkout) {
-        bail!(
-            "Branch '{}' no longer exists\n\nIt may have been deleted after the initial search.\nRun 'git branch' to see available branches.",
-            branch_to_checkout
-        );
+        return Err(GgoError::BranchNotFound(branch_to_checkout));
     }
 
     // Save current branch as previous before switching
