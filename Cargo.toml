@@ -1,6 +1,6 @@
 [package]
 name = "ggo"
-version = "0.3.0"
+version = "1.0.0"
 edition = "2021"
 description = "Smart git branch navigation with frecency-based ranking"
 repository = "https://github.com/XavierFabregat/ggo"
