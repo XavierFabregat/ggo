@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current database schema version
-const CURRENT_SCHEMA_VERSION: i32 = 2;
+const CURRENT_SCHEMA_VERSION: i32 = 3;
 
 /// Branch usage record from the database
 #[derive(Debug, Clone)]
@@ -159,6 +159,113 @@ fn run_migrations(conn: &Connection, from_version: i32) -> Result<()> {
                     [],
                 )
                 .context("Failed to create aliases branch index in migration v2")?;
+            }
+            3 => {
+                // Version 3: Normalise repo_path columns by stripping trailing
+                // path separators. Pre-libgit2 ggo stored "/foo"; libgit2's
+                // workdir() returns "/foo/", which created split records for
+                // the same repo. Merge duplicates here so frecency, aliases,
+                // and stats line up after upgrade.
+                let tx = conn
+                    .unchecked_transaction()
+                    .context("Failed to start migration v3 transaction")?;
+
+                // branches: sum switch_count, take latest last_used.
+                tx.execute(
+                    "CREATE TEMP TABLE branches_merged AS
+                     SELECT
+                         rtrim(repo_path, '/\\') AS repo_path,
+                         branch_name,
+                         SUM(switch_count) AS switch_count,
+                         MAX(last_used) AS last_used
+                     FROM branches
+                     GROUP BY rtrim(repo_path, '/\\'), branch_name",
+                    [],
+                )
+                .context("Failed to build branches_merged in migration v3")?;
+
+                tx.execute("DELETE FROM branches", [])
+                    .context("Failed to clear branches in migration v3")?;
+
+                tx.execute(
+                    "INSERT INTO branches (repo_path, branch_name, switch_count, last_used)
+                     SELECT repo_path, branch_name, switch_count, last_used
+                     FROM branches_merged",
+                    [],
+                )
+                .context("Failed to reinsert branches in migration v3")?;
+
+                tx.execute("DROP TABLE branches_merged", [])
+                    .context("Failed to drop branches_merged in migration v3")?;
+
+                // aliases: on collision keep the most recently created target.
+                tx.execute(
+                    "CREATE TEMP TABLE aliases_merged AS
+                     SELECT repo_path_norm AS repo_path, alias, branch_name, created_at
+                     FROM (
+                         SELECT
+                             rtrim(repo_path, '/\\') AS repo_path_norm,
+                             alias,
+                             branch_name,
+                             created_at,
+                             ROW_NUMBER() OVER (
+                                 PARTITION BY rtrim(repo_path, '/\\'), alias
+                                 ORDER BY created_at DESC
+                             ) AS rn
+                         FROM aliases
+                     )
+                     WHERE rn = 1",
+                    [],
+                )
+                .context("Failed to build aliases_merged in migration v3")?;
+
+                tx.execute("DELETE FROM aliases", [])
+                    .context("Failed to clear aliases in migration v3")?;
+
+                tx.execute(
+                    "INSERT INTO aliases (repo_path, alias, branch_name, created_at)
+                     SELECT repo_path, alias, branch_name, created_at FROM aliases_merged",
+                    [],
+                )
+                .context("Failed to reinsert aliases in migration v3")?;
+
+                tx.execute("DROP TABLE aliases_merged", [])
+                    .context("Failed to drop aliases_merged in migration v3")?;
+
+                // previous_branch: PK is repo_path; keep the most recent entry.
+                tx.execute(
+                    "CREATE TEMP TABLE previous_branch_merged AS
+                     SELECT repo_path_norm AS repo_path, branch_name, updated_at
+                     FROM (
+                         SELECT
+                             rtrim(repo_path, '/\\') AS repo_path_norm,
+                             branch_name,
+                             updated_at,
+                             ROW_NUMBER() OVER (
+                                 PARTITION BY rtrim(repo_path, '/\\')
+                                 ORDER BY updated_at DESC
+                             ) AS rn
+                         FROM previous_branch
+                     )
+                     WHERE rn = 1",
+                    [],
+                )
+                .context("Failed to build previous_branch_merged in migration v3")?;
+
+                tx.execute("DELETE FROM previous_branch", [])
+                    .context("Failed to clear previous_branch in migration v3")?;
+
+                tx.execute(
+                    "INSERT INTO previous_branch (repo_path, branch_name, updated_at)
+                     SELECT repo_path, branch_name, updated_at FROM previous_branch_merged",
+                    [],
+                )
+                .context("Failed to reinsert previous_branch in migration v3")?;
+
+                tx.execute("DROP TABLE previous_branch_merged", [])
+                    .context("Failed to drop previous_branch_merged in migration v3")?;
+
+                tx.commit().context("Failed to commit migration v3")?;
             }
             _ => {
                 // Unknown version - should never happen
@@ -1723,13 +1830,14 @@ mod tests {
             .map_while(Result::ok)
             .collect();
 
-        assert_eq!(versions.len(), 2);
+        assert_eq!(versions.len(), 3);
         assert_eq!(versions[0], 1);
         assert_eq!(versions[1], 2);
+        assert_eq!(versions[2], 3);
     }
 
     #[test]
-    fn test_migration_from_v1_to_v2() {
+    fn test_migration_from_v1_to_current() {
         // Simulate a database that only has v1 schema
         let conn = Connection::open_in_memory().unwrap();
 
@@ -1743,7 +1851,7 @@ mod tests {
         )
         .unwrap();
 
-        // Manually create v1 schema
+        // Manually create v1 schema (both branches and previous_branch).
         conn.execute(
             "CREATE TABLE branches (
                 id INTEGER PRIMARY KEY,
@@ -1757,6 +1865,16 @@ mod tests {
         )
         .unwrap();
 
+        conn.execute(
+            "CREATE TABLE previous_branch (
+                repo_path TEXT PRIMARY KEY,
+                branch_name TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
         // Record v1 migration
         conn.execute(
             "INSERT INTO schema_version (version, applied_at) VALUES (1, 1234567890)",
@@ -1764,10 +1882,10 @@ mod tests {
         )
         .unwrap();
 
-        // Now run initialization (should migrate to v2)
+        // Now run initialization (should migrate forward to CURRENT_SCHEMA_VERSION)
         initialize_tables(&conn).unwrap();
 
-        // Verify we're at v2
+        // Verify we're at the current version
         let version: i32 = conn
             .query_row(
                 "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
@@ -1775,9 +1893,9 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, CURRENT_SCHEMA_VERSION);
 
-        // Verify aliases table was created
+        // Verify aliases table was created (added in v2)
         let aliases_exists: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='aliases'",
@@ -1786,6 +1904,144 @@ mod tests {
             )
             .unwrap();
         assert_eq!(aliases_exists, 1);
+    }
+
+    #[test]
+    fn test_migration_v2_to_v3_merges_trailing_slash_branches() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        // Stand up a v2 database manually.
+        conn.execute(
+            "CREATE TABLE schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE branches (
+                id INTEGER PRIMARY KEY,
+                repo_path TEXT NOT NULL,
+                branch_name TEXT NOT NULL,
+                switch_count INTEGER DEFAULT 1,
+                last_used INTEGER NOT NULL,
+                UNIQUE(repo_path, branch_name)
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE previous_branch (
+                repo_path TEXT PRIMARY KEY,
+                branch_name TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE aliases (
+                repo_path TEXT NOT NULL,
+                alias TEXT NOT NULL,
+                branch_name TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (repo_path, alias)
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (1, 1), (2, 2)",
+            [],
+        )
+        .unwrap();
+
+        // Same physical repo recorded under two repo_path forms.
+        conn.execute(
+            "INSERT INTO branches (repo_path, branch_name, switch_count, last_used) VALUES
+             ('/foo', 'main', 3, 100),
+             ('/foo/', 'main', 5, 200),
+             ('/foo', 'feature', 2, 150),
+             ('/bar', 'main', 1, 50)",
+            [],
+        )
+        .unwrap();
+
+        // Same alias under both repo_path forms; the newer one should win.
+        conn.execute(
+            "INSERT INTO aliases (repo_path, alias, branch_name, created_at) VALUES
+             ('/foo', 'm', 'master', 100),
+             ('/foo/', 'm', 'main', 200)",
+            [],
+        )
+        .unwrap();
+
+        // Same repo recorded twice in previous_branch (PK is repo_path).
+        conn.execute(
+            "INSERT INTO previous_branch (repo_path, branch_name, updated_at) VALUES
+             ('/foo', 'old-branch', 100),
+             ('/foo/', 'new-branch', 200)",
+            [],
+        )
+        .unwrap();
+
+        initialize_tables(&conn).unwrap();
+
+        // branches: '/foo' main rows should be merged.
+        let main_row: (i64, i64) = conn
+            .query_row(
+                "SELECT switch_count, last_used FROM branches
+                 WHERE repo_path = '/foo' AND branch_name = 'main'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(main_row, (8, 200));
+
+        // No row should retain the trailing-slash form.
+        let with_slash: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM branches WHERE repo_path LIKE '%/'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(with_slash, 0);
+
+        // Unrelated row left alone.
+        let bar_count: i64 = conn
+            .query_row(
+                "SELECT switch_count FROM branches
+                 WHERE repo_path = '/bar' AND branch_name = 'main'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(bar_count, 1);
+
+        // aliases: only the newest entry survives.
+        let alias_rows: Vec<(String, String)> = conn
+            .prepare("SELECT repo_path, branch_name FROM aliases WHERE alias = 'm'")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(alias_rows, vec![("/foo".to_string(), "main".to_string())]);
+
+        // previous_branch: most-recent entry survives.
+        let prev_rows: Vec<(String, String)> = conn
+            .prepare("SELECT repo_path, branch_name FROM previous_branch")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(
+            prev_rows,
+            vec![("/foo".to_string(), "new-branch".to_string())]
+        );
     }
 
     #[test]
@@ -1878,7 +2134,7 @@ mod tests {
         )
         .unwrap();
 
-        // Create v1 schema
+        // Create v1 schema (branches + previous_branch)
         conn.execute(
             "CREATE TABLE branches (
                 id INTEGER PRIMARY KEY,
@@ -1887,6 +2143,16 @@ mod tests {
                 switch_count INTEGER DEFAULT 1,
                 last_used INTEGER NOT NULL,
                 UNIQUE(repo_path, branch_name)
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE previous_branch (
+                repo_path TEXT PRIMARY KEY,
+                branch_name TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
             )",
             [],
         )
@@ -1906,7 +2172,7 @@ mod tests {
         )
         .unwrap();
 
-        // Run migration to v2
+        // Run migrations forward to CURRENT_SCHEMA_VERSION
         initialize_tables(&conn).unwrap();
 
         // Verify data is preserved
