@@ -51,15 +51,28 @@ pub fn get_repo_root() -> Result<String> {
         GgoError::Other("Repository has no working directory (bare repository?)".to_string())
     })?;
 
-    let path = workdir
+    let raw = workdir
         .to_str()
-        .ok_or_else(|| GgoError::Other("Repository path contains invalid UTF-8".to_string()))?
-        .to_string();
+        .ok_or_else(|| GgoError::Other("Repository path contains invalid UTF-8".to_string()))?;
 
-    // Validate the returned repo path
+    // libgit2's workdir() always appends a trailing separator; pre-libgit2 ggo
+    // did not. Normalise so DB keys stay stable across versions. Preserve at
+    // least one character for pathological roots like "/".
+    let path = normalize_repo_path(raw);
+
     validation::validate_repo_path(&path)?;
 
     Ok(path)
+}
+
+/// Strip trailing path separators from a repository path.
+fn normalize_repo_path(raw: &str) -> String {
+    let trimmed = raw.trim_end_matches(['/', '\\']);
+    if trimmed.is_empty() {
+        raw.to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 /// Get the name of the current branch
@@ -251,10 +264,11 @@ mod tests {
             anyhow::anyhow!("Repository has no working directory (bare repository?)")
         })?;
 
-        let root_path = workdir
+        let raw = workdir
             .to_str()
-            .ok_or_else(|| anyhow::anyhow!("Repository path contains invalid UTF-8"))?
-            .to_string();
+            .ok_or_else(|| anyhow::anyhow!("Repository path contains invalid UTF-8"))?;
+
+        let root_path = normalize_repo_path(raw);
 
         validation::validate_repo_path(&root_path)
             .context("Git returned invalid repository path")?;
@@ -289,6 +303,29 @@ mod tests {
         let result = get_repo_root_from_path(temp_dir.path());
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_repo_root_strips_trailing_separator() {
+        let temp_dir = setup_test_repo().expect("Failed to create test repo");
+        let root = get_repo_root_from_path(temp_dir.path()).unwrap();
+
+        assert!(
+            !root.ends_with('/') && !root.ends_with('\\'),
+            "repo path should have no trailing separator, got {:?}",
+            root
+        );
+    }
+
+    #[test]
+    fn test_normalize_repo_path() {
+        assert_eq!(normalize_repo_path("/foo/bar"), "/foo/bar");
+        assert_eq!(normalize_repo_path("/foo/bar/"), "/foo/bar");
+        assert_eq!(normalize_repo_path("/foo/bar///"), "/foo/bar");
+        assert_eq!(normalize_repo_path("C:\\foo\\"), "C:\\foo");
+        // Pathological inputs are preserved rather than collapsed to empty.
+        assert_eq!(normalize_repo_path("/"), "/");
+        assert_eq!(normalize_repo_path("///"), "///");
     }
 
     // Helper to get current branch from a specific repo
